@@ -13,6 +13,8 @@ var page := "home"
 var pieces: Array = []
 var next_id := 1
 var selected_kind := 3
+var selected_rotation := 0
+var palette_rotations: Dictionary = {}
 var selected_color := 0
 var selected_id := -1
 var guide_index := -1
@@ -42,6 +44,12 @@ var dragged_id := -1
 var drag_start_cell := Vector2i.ZERO
 var preview_cell := Vector2i(-100,-100)
 var autosave_timer: Timer
+const DOUBLE_TAP_MSEC := 420
+const TAP_MAX_MOVE := 25.0
+var last_tap_time := -10000
+var last_tap_target := ""
+var last_tap_position := Vector2.ZERO
+var last_touch_msec := -10000
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -167,9 +175,7 @@ func _draw_game() -> void:
 		var y_offset := grid_origin.y+float(y)*grid_cell
 		draw_line(Vector2(grid_origin.x,y_offset),Vector2(grid_origin.x+float(Core.COLUMNS)*grid_cell,y_offset),Color("#EFF3F4"),1.0)
 	var message := notice
-	if page == "guide" and guide_step < guide_parts.size():
-		message = "第 %d / %d 塊：把積木滑進綠色框框" % [guide_step+1,guide_parts.size()]
-	elif page == "guide" and guide_step >= guide_parts.size():
+	if page == "guide" and guide_step >= guide_parts.size():
 		message = "完成了！太棒了！記得按右上角的「收藏」"
 	_card(Rect2(board_area.position+Vector2(10,9),Vector2(minf(board_area.size.x-20,680),38)),Color("#F0F8F4"),12)
 	_text(message,board_area.position+Vector2(23,36),20,Color("#54856A"))
@@ -187,7 +193,12 @@ func _draw_game() -> void:
 			if not existing.is_empty():
 				kind = int(existing["kind"])
 				color_index = int(existing["color"])
-		var sample := Core.make_piece(9999,kind,color_index,preview_cell)
+		var rotation := selected_rotation
+		if gesture == "existing":
+			var moving_piece := _find_by_id(dragged_id)
+			if not moving_piece.is_empty():
+				rotation = Core.rotation_of(moving_piece)
+		var sample := Core.make_piece(9999,kind,color_index,preview_cell,rotation)
 		if _on_board(pointer_point):
 			var valid := Core.can_place(pieces,sample,dragged_id if gesture=="existing" else -1)
 			_card(_brick_rect(sample),Color("#90D5AB",0.35) if valid else Color("#FBAAAA",0.45),9,Color("#54B47D") if valid else Color("#DE6A6A"))
@@ -196,18 +207,21 @@ func _draw_game() -> void:
 func _draw_palette() -> void:
 	var top := size.y-PALETTE_HEIGHT
 	_card(Rect2(Vector2(0,top),Vector2(size.x,PALETTE_HEIGHT)),Color("#FFF2DB"),19)
-	_text("積木  ← 左右滑可以換形狀 →",Vector2(24,top+23),19,Color("#8A6A4B"))
-	for i in range(Core.SHAPES.size()):
-		var x := 22.0+float(i)*SHAPE_WIDTH-shape_scroll
+	_text("積木：點兩下 ↻ 轉方向，左右滑換積木",Vector2(24,top+23),19,Color("#8A6A4B"))
+	for slot in range(Core.PALETTE_KINDS.size()):
+		var i: int = Core.PALETTE_KINDS[slot]
+		var x := 22.0+float(slot)*SHAPE_WIDTH-shape_scroll
 		var rect := Rect2(Vector2(x,top+29),Vector2(105,69))
 		if rect.position.x < 6 or rect.end.x > size.x-7:
 			continue
 		_card(rect,Color("#FFFFFF") if i != selected_kind else Color("#FCE8B0"),14,Color("#F5BC66") if i==selected_kind else Color("#E5E0DA"))
-		var shape := Core.size_for(i)
+		var shape := Core.size_for(i,int(palette_rotations.get(i,0)))
 		var cell := minf(23.0, minf(81.0/float(shape.x),40.0/float(shape.y)))
 		var bounds := Rect2(Vector2(x+(105-shape.x*cell)*0.5,top+36+(40-shape.y*cell)*0.5),Vector2(shape)*cell)
 		_paint_brick(bounds,Core.color_for(selected_color),shape,cell,false)
 		_text(Core.shape_label(i),Vector2(x+33,top+91),17,Color("#60778A"))
+		if i == selected_kind and shape.x != shape.y:
+			_text("↻",Vector2(x+83,top+91),19,Color("#C97733"))
 	_text("顏色",Vector2(20,top+135),18,Color("#8A6A4B"))
 	for i in Core.COLORS.size():
 		var cx := 110.0+float(i)*COLOR_WIDTH-color_scroll+22.0
@@ -221,12 +235,12 @@ func _draw_palette() -> void:
 
 func _brick_rect(piece: Dictionary) -> Rect2:
 	var cell := Core.cell_of(piece)
-	var dims := Core.size_for(int(piece["kind"]))
+	var dims := Core.size_for(int(piece["kind"]),Core.rotation_of(piece))
 	return Rect2(grid_origin+Vector2(cell)*grid_cell,Vector2(dims)*grid_cell)
 
 func _draw_brick(piece: Dictionary, highlighted: bool) -> void:
 	var rect := _brick_rect(piece)
-	var dims := Core.size_for(int(piece["kind"]))
+	var dims := Core.size_for(int(piece["kind"]),Core.rotation_of(piece))
 	_paint_brick(rect,Core.color_for(int(piece["color"])),dims,grid_cell,highlighted)
 
 func _paint_brick(rect: Rect2, paint: Color, dims: Vector2i, single_cell: float, highlighted: bool) -> void:
@@ -249,8 +263,8 @@ func _on_board(point: Vector2) -> bool:
 func _cell_at(point: Vector2) -> Vector2i:
 	return Vector2i(floori((point.x-grid_origin.x)/grid_cell),floori((point.y-grid_origin.y)/grid_cell))
 
-func _cell_centered(point: Vector2, kind: int) -> Vector2i:
-	var dims := Core.size_for(kind)
+func _cell_centered(point: Vector2, kind: int, rotation: int = 0) -> Vector2i:
+	var dims := Core.size_for(kind,rotation)
 	var x := roundi((point.x-grid_origin.x)/grid_cell-float(dims.x)*0.5)
 	var y := roundi((point.y-grid_origin.y)/grid_cell-float(dims.y)*0.5)
 	return Vector2i(x,y)
@@ -309,6 +323,8 @@ func _start_new() -> void:
 	guide_step = 0
 	guide_parts = []
 	selected_kind = 3
+	selected_rotation = 0
+	palette_rotations.clear()
 	selected_color = 0
 	history.clear()
 	future.clear()
@@ -346,8 +362,11 @@ func _set_next_guide_piece() -> void:
 		notice = "好棒！作品完成了！"
 		return
 	var part: Dictionary = guide_parts[guide_step]
-	selected_kind = int(part["kind"])
+	selected_kind = Core.canonical_kind(int(part["kind"]))
+	selected_rotation = Core.canonical_rotation(int(part["kind"])) ^ Core.rotation_of(part)
+	palette_rotations[selected_kind] = selected_rotation
 	selected_color = int(part["color"])
+	notice = "第 %d / %d 塊：點兩下可轉方向，再滑進框框" % [guide_step+1,guide_parts.size()]
 
 func _perform(action: String) -> void:
 	match action:
@@ -425,14 +444,17 @@ func _drop_new(point: Vector2) -> void:
 		if guide_step >= guide_parts.size():
 			return
 		var target: Dictionary = guide_parts[guide_step]
-		if selected_kind != int(target["kind"]):
+		if Core.canonical_kind(selected_kind) != Core.canonical_kind(int(target["kind"])):
 			notice = "找出跟亮亮框框一樣的積木"
+			return
+		if Core.size_for(selected_kind,selected_rotation) != Core.size_for(int(target["kind"]),Core.rotation_of(target)):
+			notice = "點兩下積木，轉成跟亮亮框框一樣的方向"
 			return
 		var midpoint := _brick_rect(target).get_center()
 		if point.distance_to(midpoint) > grid_cell*3.5:
 			notice = "再滑近一點亮亮的框框"
 			return
-		var to_place := Core.make_piece(next_id,selected_kind,selected_color,Core.cell_of(target))
+		var to_place := Core.make_piece(next_id,selected_kind,selected_color,Core.cell_of(target),selected_rotation)
 		if not Core.can_place(pieces,to_place):
 			notice = "這裡已經有積木了"
 			return
@@ -445,7 +467,7 @@ func _drop_new(point: Vector2) -> void:
 			notice = "完成囉！按右上角「收藏」"
 		_schedule_save()
 	else:
-		var new_piece := Core.make_piece(next_id,selected_kind,selected_color,_cell_centered(point,selected_kind))
+		var new_piece := Core.make_piece(next_id,selected_kind,selected_color,_cell_centered(point,selected_kind,selected_rotation),selected_rotation)
 		if not Core.can_place(pieces,new_piece):
 			notice = "那裡放不下，找個空白地方試試"
 			return
@@ -485,10 +507,10 @@ func _drop_existing(point: Vector2) -> void:
 func _pick_shape(point: Vector2) -> int:
 	if point.y < size.y-PALETTE_HEIGHT+27 or point.y > size.y-PALETTE_HEIGHT+104:
 		return -1
-	var index := floori((point.x-22.0+shape_scroll)/SHAPE_WIDTH)
-	if index < 0 or index >= Core.SHAPES.size():
+	var slot := floori((point.x-22.0+shape_scroll)/SHAPE_WIDTH)
+	if slot < 0 or slot >= Core.PALETTE_KINDS.size():
 		return -1
-	return index
+	return Core.PALETTE_KINDS[slot]
 
 func _pick_color(point: Vector2) -> int:
 	var index := roundi((point.x-132.0+color_scroll)/COLOR_WIDTH)
@@ -498,6 +520,45 @@ func _pick_color(point: Vector2) -> int:
 	if absf(point.x-x) > 30.0:
 		return -1
 	return index
+
+func _register_double_tap(target: String, point: Vector2) -> bool:
+	var now := Time.get_ticks_msec()
+	var doubled := target == last_tap_target and now-last_tap_time <= DOUBLE_TAP_MSEC and point.distance_to(last_tap_position) <= 34.0
+	last_tap_target = "" if doubled else target
+	last_tap_time = now
+	last_tap_position = point
+	return doubled
+
+func _rotate_existing(piece_id: int) -> void:
+	var original := _find_by_id(piece_id)
+	if original.is_empty():
+		return
+	var dims := Core.size_for(int(original["kind"]))
+	if dims.x == dims.y:
+		notice = "正方形不需要轉方向喔"
+		return
+	var turned := Core.turned_piece(original,pieces)
+	if turned.is_empty():
+		notice = "旁邊太擠了，換個空位再轉看看"
+		return
+	_remember()
+	for index in pieces.size():
+		if int(pieces[index]["id"]) == piece_id:
+			pieces[index] = turned
+			break
+	selected_id = piece_id
+	notice = "轉好了！點兩下可以再轉回來"
+	_schedule_save()
+
+func _rotate_palette(kind: int) -> void:
+	var dims := Core.size_for(kind)
+	if dims.x == dims.y:
+		notice = "正方形的方向都是一樣的"
+		return
+	selected_kind = kind
+	selected_rotation = 1-int(palette_rotations.get(kind,0))
+	palette_rotations[kind] = selected_rotation
+	notice = "轉好了，往上滑就能放囉！"
 
 func _pointer_down(point: Vector2) -> void:
 	pressed = true
@@ -520,17 +581,14 @@ func _pointer_down(point: Vector2) -> void:
 		gesture = "shape"
 		pressed_shape = _pick_shape(point)
 	elif _on_board(point):
-		if page == "guide":
-			gesture = "blank"
+		var hit := _hit_piece(point)
+		if not hit.is_empty():
+			gesture = "existing"
+			dragged_id = int(hit["id"])
+			drag_start_cell = Core.cell_of(hit)
+			selected_id = dragged_id
 		else:
-			var hit := _hit_piece(point)
-			if not hit.is_empty():
-				gesture = "existing"
-				dragged_id = int(hit["id"])
-				drag_start_cell = Core.cell_of(hit)
-				selected_id = dragged_id
-			else:
-				gesture = "blank"
+			gesture = "blank"
 	queue_redraw()
 
 func _pointer_move(point: Vector2) -> void:
@@ -543,17 +601,20 @@ func _pointer_move(point: Vector2) -> void:
 		if point.y < size.y-PALETTE_HEIGHT-12 and total.y < -24:
 			gesture = "new"
 			selected_kind = pressed_shape
-			preview_cell = _cell_centered(point,selected_kind)
+			selected_rotation = int(palette_rotations.get(selected_kind,0))
+			preview_cell = _cell_centered(point,selected_kind,selected_rotation)
 		elif absf(total.x)>20 and absf(total.x)>absf(total.y)*1.2:
 			gesture = "shape_scroll"
+			last_tap_target = ""
 	if gesture == "shape_scroll":
-		shape_scroll = clampf(shape_scroll-delta.x,0.0,maxf(0,Core.SHAPES.size()*SHAPE_WIDTH-(size.x-40)))
+		shape_scroll = clampf(shape_scroll-delta.x,0.0,maxf(0,Core.PALETTE_KINDS.size()*SHAPE_WIDTH-(size.x-40)))
 	elif gesture == "color" and absf(total.x)>20:
 		gesture = "color_scroll"
+		last_tap_target = ""
 	if gesture == "color_scroll":
 		color_scroll = clampf(color_scroll-delta.x,0.0,maxf(0,Core.COLORS.size()*COLOR_WIDTH-(size.x-130)))
 	elif gesture == "new":
-		preview_cell = _cell_centered(point,selected_kind)
+		preview_cell = _cell_centered(point,selected_kind,selected_rotation)
 	elif gesture == "existing":
 		var movement := Vector2i(roundi(total.x/grid_cell),roundi(total.y/grid_cell))
 		preview_cell = drag_start_cell+movement
@@ -579,10 +640,14 @@ func _pointer_up(point: Vector2) -> void:
 			if btn["rect"].has_point(start_point) and btn["rect"].has_point(point):
 				_perform(str(btn["action"]))
 				break
-	elif old_gesture == "shape" and travel < 25.0 and pressed_shape >= 0:
+	elif old_gesture == "shape" and travel < TAP_MAX_MOVE and pressed_shape >= 0:
 		selected_kind = pressed_shape
+		selected_rotation = int(palette_rotations.get(selected_kind,0))
 		selected_id = -1
-		notice = "選好了！把積木往上滑吧"
+		if _register_double_tap("shape:%d" % selected_kind,point):
+			_rotate_palette(selected_kind)
+		else:
+			notice = "選好了！點兩下可轉方向，再往上滑"
 	elif old_gesture == "color" and travel < 25.0 and pressed_color >= 0:
 		selected_color = pressed_color
 		if selected_id >= 0 and page == "play":
@@ -594,9 +659,15 @@ func _pointer_up(point: Vector2) -> void:
 					break
 		notice = "顏色換好了"
 	elif old_gesture == "new" and _on_board(point):
+		last_tap_target = ""
 		_drop_new(point)
 	elif old_gesture == "existing":
-		_drop_existing(point)
+		if travel <= TAP_MAX_MOVE and dragged_id >= 0 and _register_double_tap("brick:%d" % dragged_id,point):
+			_rotate_existing(dragged_id)
+		else:
+			if travel > TAP_MAX_MOVE:
+				last_tap_target = ""
+			_drop_existing(point)
 	elif old_gesture == "blank" and travel < 25.0:
 		_drop_new(point)
 	dragged_id = -1
@@ -604,6 +675,7 @@ func _pointer_up(point: Vector2) -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
+		last_touch_msec = Time.get_ticks_msec()
 		touch_active = event.pressed
 		if event.pressed:
 			_pointer_down(event.position)
@@ -613,13 +685,13 @@ func _gui_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_pointer_move(event.position)
 		accept_event()
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not touch_active:
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not touch_active and Time.get_ticks_msec()-last_touch_msec > 550:
 		if event.pressed:
 			_pointer_down(event.position)
 		else:
 			_pointer_up(event.position)
 		accept_event()
-	elif event is InputEventMouseMotion and pressed and not touch_active:
+	elif event is InputEventMouseMotion and pressed and not touch_active and Time.get_ticks_msec()-last_touch_msec > 550:
 		_pointer_move(event.position)
 		accept_event()
 
