@@ -3,6 +3,7 @@ extends Control
 const Core = preload("res://scripts/Blocks2D.gd")
 const Guides = preload("res://scripts/Guides2D.gd")
 const Store = preload("res://scripts/Save2D.gd")
+const CanvasBounds = preload("res://scripts/CanvasBounds2D.gd")
 
 const TOP_HEIGHT := 78.0
 const PALETTE_HEIGHT := 160.0
@@ -30,6 +31,9 @@ var color_scroll := 0.0
 var board_area: Rect2
 var grid_origin := Vector2.ZERO
 var grid_cell := 40.0
+var canvas_bounds: Rect2i = Rect2i(0,0,Core.COLUMNS,Core.ROWS)
+var focus_cell := Vector2(Core.COLUMNS*0.5,Core.ROWS*0.5)
+var pan_offset := Vector2.ZERO
 var menu_buttons: Array = []
 var toolbar_buttons: Array = []
 var touch_active := false
@@ -74,10 +78,34 @@ func _on_resized() -> void:
 
 func _layout() -> void:
 	board_area = Rect2(Vector2(18,TOP_HEIGHT+6),Vector2(maxf(200.0,size.x-36.0),maxf(120.0,size.y-TOP_HEIGHT-PALETTE_HEIGHT-18.0)))
-	grid_cell = floorf(minf((board_area.size.x-34.0)/Core.COLUMNS,(board_area.size.y-28.0)/Core.ROWS))
-	grid_cell = maxf(12.0,grid_cell)
-	var total := Vector2(Core.COLUMNS,Core.ROWS)*grid_cell
-	grid_origin = board_area.position+(board_area.size-total)*0.5
+	grid_cell = CanvasBounds.fit_cell(board_area.size,canvas_bounds)
+	var world_center := Vector2(canvas_bounds.position)+Vector2(canvas_bounds.size)*0.5
+	var center := world_center if CanvasBounds.fully_visible(board_area.size,canvas_bounds,grid_cell) else focus_cell
+	grid_origin = board_area.get_center()-center*grid_cell+pan_offset
+	# Fully fitted maps stay centered. Large maps pan but maintain a finger-sized cell.
+	var top_left := grid_origin+Vector2(canvas_bounds.position)*grid_cell
+	var extent := Vector2(canvas_bounds.size)*grid_cell
+	var near := board_area.position+Vector2(7,7)
+	var far := board_area.end-Vector2(7,7)
+	if extent.x <= board_area.size.x-14:
+		grid_origin.x += board_area.get_center().x-(top_left.x+extent.x*0.5)
+	else:
+		grid_origin.x += clampf(top_left.x,far.x-extent.x,near.x)-top_left.x
+	if extent.y <= board_area.size.y-14:
+		grid_origin.y += board_area.get_center().y-(top_left.y+extent.y*0.5)
+	else:
+		grid_origin.y += clampf(top_left.y,far.y-extent.y,near.y)-top_left.y
+	pan_offset = grid_origin-(board_area.get_center()-center*grid_cell)
+
+func _refresh_canvas(focus: Vector2 = Vector2(INF,INF)) -> void:
+	var previous := canvas_bounds
+	canvas_bounds = CanvasBounds.bounds_for(pieces)
+	if canvas_bounds != previous:
+		pan_offset = Vector2.ZERO
+		if is_finite(focus.x) and is_finite(focus.y):
+			focus_cell = focus
+	_layout()
+	queue_redraw()
 
 func _font() -> Font:
 	return ThemeDB.fallback_font
@@ -168,12 +196,21 @@ func _draw_game() -> void:
 		_text(actions[i],rect.position+Vector2(12,36),21)
 		toolbar_buttons.append({"rect":rect,"action":ids[i]})
 	_card(board_area,Color("#FFFFFF"),22)
-	for x in range(Core.COLUMNS+1):
-		var x_offset := grid_origin.x+float(x)*grid_cell
-		draw_line(Vector2(x_offset,grid_origin.y),Vector2(x_offset,grid_origin.y+float(Core.ROWS)*grid_cell),Color("#EFF3F4"),1.0)
-	for y in range(Core.ROWS+1):
-		var y_offset := grid_origin.y+float(y)*grid_cell
-		draw_line(Vector2(grid_origin.x,y_offset),Vector2(grid_origin.x+float(Core.COLUMNS)*grid_cell,y_offset),Color("#EFF3F4"),1.0)
+	var map_start := grid_origin+Vector2(canvas_bounds.position)*grid_cell
+	var map_end := map_start+Vector2(canvas_bounds.size)*grid_cell
+	var visible_left := maxf(board_area.position.x+5.0,map_start.x)
+	var visible_right := minf(board_area.end.x-5.0,map_end.x)
+	var visible_top := maxf(board_area.position.y+5.0,map_start.y)
+	var visible_bottom := minf(board_area.end.y-5.0,map_end.y)
+	if visible_left < visible_right and visible_top < visible_bottom:
+		for x in range(canvas_bounds.position.x,canvas_bounds.end.x+1):
+			var px := grid_origin.x+float(x)*grid_cell
+			if px >= visible_left and px <= visible_right:
+				draw_line(Vector2(px,visible_top),Vector2(px,visible_bottom),Color("#EFF3F4"),1.0)
+		for y in range(canvas_bounds.position.y,canvas_bounds.end.y+1):
+			var py := grid_origin.y+float(y)*grid_cell
+			if py >= visible_top and py <= visible_bottom:
+				draw_line(Vector2(visible_left,py),Vector2(visible_right,py),Color("#EFF3F4"),1.0)
 	var message := notice
 	if page == "guide" and guide_step >= guide_parts.size():
 		message = "完成了！太棒了！記得按右上角的「收藏」"
@@ -184,7 +221,8 @@ func _draw_game() -> void:
 		var target_box := _brick_rect(target)
 		_card(target_box,Color("#A6E0AF",0.37),8,Color("#3DA875"))
 	for piece in pieces:
-		_draw_brick(piece,int(piece["id"]) == selected_id)
+		if _brick_rect(piece).intersects(board_area.grow(-5.0)):
+			_draw_brick(piece,int(piece["id"]) == selected_id)
 	if (gesture == "new" or gesture == "existing") and preview_cell.x > -50:
 		var kind := selected_kind
 		var color_index := selected_color
@@ -258,7 +296,7 @@ func _paint_brick(rect: Rect2, paint: Color, dims: Vector2i, single_cell: float,
 			draw_circle(center-Vector2(2,2),radius*0.32,paint.lightened(0.38))
 
 func _on_board(point: Vector2) -> bool:
-	return Rect2(grid_origin,Vector2(Core.COLUMNS,Core.ROWS)*grid_cell).has_point(point)
+	return board_area.grow(-7.0).has_point(point)
 
 func _cell_at(point: Vector2) -> Vector2i:
 	return Vector2i(floori((point.x-grid_origin.x)/grid_cell),floori((point.y-grid_origin.y)/grid_cell))
@@ -308,6 +346,7 @@ func _restore(document: Dictionary) -> void:
 	selected_id = -1
 	history.clear()
 	future.clear()
+	_refresh_canvas()
 
 func _archive_existing() -> void:
 	if not pieces.is_empty():
@@ -330,6 +369,7 @@ func _start_new() -> void:
 	future.clear()
 	page = "play"
 	notice = "從下面抓一塊積木，往上滑就能放囉！"
+	_refresh_canvas()
 	_schedule_save()
 	queue_redraw()
 
@@ -354,6 +394,7 @@ func _start_guide(index: int) -> void:
 	future.clear()
 	_set_next_guide_piece()
 	page = "guide"
+	_refresh_canvas()
 	_schedule_save()
 	queue_redraw()
 
@@ -412,6 +453,7 @@ func _undo() -> void:
 		_set_next_guide_piece()
 	selected_id = -1
 	notice = "已經退回上一步"
+	_refresh_canvas()
 	_schedule_save()
 
 func _delete_selected() -> void:
@@ -426,6 +468,7 @@ func _delete_selected() -> void:
 	pieces = remaining
 	selected_id = -1
 	notice = "積木收起來了"
+	_refresh_canvas()
 	_schedule_save()
 
 func _save_gallery() -> void:
@@ -465,6 +508,7 @@ func _drop_new(point: Vector2) -> void:
 		_set_next_guide_piece()
 		if guide_step >= guide_parts.size():
 			notice = "完成囉！按右上角「收藏」"
+		_refresh_canvas(Core.rect_of(to_place).get_center())
 		_schedule_save()
 	else:
 		var new_piece := Core.make_piece(next_id,selected_kind,selected_color,_cell_centered(point,selected_kind,selected_rotation),selected_rotation)
@@ -475,7 +519,8 @@ func _drop_new(point: Vector2) -> void:
 		pieces.append(new_piece)
 		next_id += 1
 		selected_id = int(new_piece["id"])
-		notice = "好棒！再拼一塊吧"
+		notice = "好棒！底圖會跟著積木一起變大！"
+		_refresh_canvas(Core.rect_of(new_piece).get_center())
 		_schedule_save()
 
 func _drop_existing(point: Vector2) -> void:
@@ -502,6 +547,7 @@ func _drop_existing(point: Vector2) -> void:
 			break
 	selected_id = dragged_id
 	notice = "積木搬好家了"
+	_refresh_canvas(Core.rect_of(moved).get_center())
 	_schedule_save()
 
 func _pick_shape(point: Vector2) -> int:
@@ -548,6 +594,7 @@ func _rotate_existing(piece_id: int) -> void:
 			break
 	selected_id = piece_id
 	notice = "轉好了！點兩下可以再轉回來"
+	_refresh_canvas(Core.rect_of(turned).get_center())
 	_schedule_save()
 
 func _rotate_palette(kind: int) -> void:
@@ -597,6 +644,12 @@ func _pointer_move(point: Vector2) -> void:
 	var delta := point-last_point
 	pointer_point = point
 	var total := point-start_point
+	if gesture == "blank" and total.length() > TAP_MAX_MOVE:
+		gesture = "pan"
+		last_tap_target = ""
+	if gesture == "pan":
+		pan_offset += delta
+		_layout()
 	if gesture == "shape" and pressed_shape >= 0:
 		if point.y < size.y-PALETTE_HEIGHT-12 and total.y < -24:
 			gesture = "new"
@@ -670,6 +723,8 @@ func _pointer_up(point: Vector2) -> void:
 			_drop_existing(point)
 	elif old_gesture == "blank" and travel < 25.0:
 		_drop_new(point)
+	elif old_gesture == "pan":
+		notice = "滑動空白底圖就能移動地圖"
 	dragged_id = -1
 	queue_redraw()
 
