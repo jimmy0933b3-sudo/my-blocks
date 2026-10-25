@@ -346,6 +346,12 @@ func _restore(document: Dictionary) -> void:
 	selected_id = -1
 	history.clear()
 	future.clear()
+	# Reopen large works near a real brick, not an empty middle of the world.
+	pan_offset = Vector2.ZERO
+	if not pieces.is_empty():
+		focus_cell = Core.rect_of(pieces.back()).get_center()
+	else:
+		focus_cell = Vector2(Core.COLUMNS*0.5,Core.ROWS*0.5)
 	_refresh_canvas()
 
 func _archive_existing() -> void:
