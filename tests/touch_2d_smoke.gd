@@ -62,6 +62,47 @@ func _initialize() -> void:
 		fail_case("Different brick must reset double-tap recognition")
 		return
 	gesture.free()
+	# The floor grows when blocks approach the top, left, right or bottom.
+	var Bounds = preload("res://scripts/CanvasBounds2D.gd")
+	var default_bounds: Rect2i = Bounds.bounds_for([])
+	if default_bounds != Rect2i(0,0,Core.COLUMNS,Core.ROWS):
+		fail_case("Empty canvas must keep old 18x9 layout")
+		return
+	var edge_parts: Array = [
+		Core.make_piece(200,0,1,Vector2i(-4,-2)),
+		Core.make_piece(201,1,2,Vector2i(18,9))
+	]
+	var expanded: Rect2i = Bounds.bounds_for(edge_parts)
+	if expanded.position.x >= 0 or expanded.position.y >= 0 or expanded.end.x <= Core.COLUMNS or expanded.end.y <= Core.ROWS:
+		fail_case("Canvas did not expand automatically in all four directions")
+		return
+	for block in edge_parts:
+		if not Core.can_place([],block) or not expanded.encloses(Core.rect_of(block)):
+			fail_case("Extended map must contain newly placed bricks")
+			return
+	var many: Array = [Core.make_piece(202,2,1,Vector2i(40,35))]
+	var large: Rect2i = Bounds.bounds_for(many)
+	if large.end.x <= 40 or large.end.y <= 35:
+		fail_case("Repeated extension did not cover distant bricks")
+		return
+	var viewport := Game.new()
+	viewport.size = Vector2(1280,720)
+	viewport.pieces = many.duplicate(true)
+	viewport._refresh_canvas(Core.rect_of(many[0]).get_center())
+	if viewport.canvas_bounds != large or viewport.grid_cell < Bounds.MIN_TOUCH_CELL:
+		fail_case("Auto fit must preserve a touchable grid")
+		return
+	if not viewport._on_board(viewport.board_area.get_center()):
+		fail_case("Expanded map must remain interactive")
+		return
+	viewport.free()
+	if not Store.autosave(edge_parts,"擴充畫布測試"):
+		fail_case("Cannot save pieces beyond old 18x9 area")
+		return
+	var expanded_loaded: Dictionary = Store.load_autosave()
+	if expanded_loaded.get("pieces",[]).size() != 2 or Bounds.bounds_for(expanded_loaded["pieces"]) != expanded:
+		fail_case("Expanded map did not reconstruct after loading")
+		return
 	var base := Core.make_piece(1,3,0,Vector2i(4,4))
 	var parts: Array = []
 	if not Core.can_place(parts,base):
@@ -71,8 +112,11 @@ func _initialize() -> void:
 	if Core.can_place(parts,Core.make_piece(2,0,1,Vector2i(5,5))):
 		fail_case("Overlapping 2D bricks")
 		return
-	if Core.can_place(parts,Core.make_piece(2,4,1,Vector2i(17,8))):
-		fail_case("Out-of-bounds brick")
+	if Core.can_place(parts,Core.make_piece(2,4,1,Vector2i(Core.WORLD_LIMIT,Core.WORLD_LIMIT))):
+		fail_case("World safety boundary ignored")
+		return
+	if not Core.can_place(parts,Core.make_piece(4,4,1,Vector2i(17,8))):
+		fail_case("Building must allow expanding beyond the original mat")
 		return
 	var adjacent := Core.make_piece(2,0,1,Vector2i(6,4))
 	if not Core.can_place(parts,adjacent):
@@ -122,5 +166,5 @@ func _initialize() -> void:
 	if not Store.autosave([old_shape],"舊版測試") or Core.rect_of(Store.load_autosave()["pieces"][0]).size!=Vector2i(1,2):
 		fail_case("Legacy shape not retained through save/restore")
 		return
-	print("PASS: 8 unique shapes, double-tap recognition, rotation/undo geometry, 32 colors, guide steps, old and new saves")
+	print("PASS: automatically growing 2D map, minimum touch size, all-edge extension, double-tap rotation, collisions, guide steps, old and new saves")
 	quit(0)
