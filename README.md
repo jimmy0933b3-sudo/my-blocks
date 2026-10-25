@@ -1,22 +1,34 @@
-# 積木小宇宙 My Blocks
+# 積木小宇宙：2D 滑動積木遊戲
 
-Godot 4.5.2 / GDScript 的 Android 3D 兒童積木遊戲（4～8 歲）。
+適合 4～8 歲小朋友的 Android 離線積木遊戲（Godot 4.5.2）。
 
-## v0.1 已實作
-- 30 種方形積木尺寸、32 種顏色與立體凸點。
-- 3D 自由放置、格點吸附、旋轉、堆疊、支撐與碰撞檢查。
-- 選取、移動、改色、刪除、復原、重做。
-- 三個引導作品：房子、車子、高塔。
-- 自動存檔與備援、作品收藏館、橫向畫面、離線遊玩。
-- 積木小世界為尚未開發的後續功能。
+## 這版改動
+- 不再使用 3D 攝影機和上下樓層，改為一張完整的 **2D 平面積木畫布**。
+- **從下方積木列往上滑**，放開即可吸附到畫布格點。
+- **按住已放好的積木滑動**，就能搬到新位置，不必切換工具。
+- 左右滑動下方零件列，挑選 **12 種基本形狀**；左右滑動顏色列切換 **32 色**。
+- 點已放好的積木，再點顏色即可換色；點刪除移走選取積木；復原功能保留。
+- 四個「跟著圖案玩」入門關卡：小房子、汽車、花朵、彩虹塔。靠近淡綠色輪廓自動吸附。
+- 收藏館、自動保存、重開繼續玩。2D 存檔另存於 blocks_2d，舊 3D 資料不會被覆蓋。
+- 新作品之前會先將舊作品收進作品館，避免換圖案時遺失進度。
 
-## Release / Signing
-工作流程使用本 Repository GitHub Actions Secrets：
-KEYSTORE_BASE64、KEYSTORE_PASSWORD、KEY_ALIAS、KEY_PASSWORD。
-此命名與 farm 專案相同，私鑰不會提交進 Git。
-其他 Repository 的 Secrets 不會自動共享，請確認 my-blocks 確實設定了相同的既有 key。
-沒有 key 時 CI 會失敗，絕不另外產生不相容的新私鑰。
-只有測試、簽章和 APK 憑證驗證成功後，才發布新版 Release 並清除舊 Release。
-APK：https://github.com/jimmy0933b3-sudo/my-blocks/releases/latest
+## 遊玩步驟
+1. 首頁選「開始新作品」。
+2. 手指從下方積木往上滑，滑到白色畫布後放開。
+3. 滑動已完成的積木可以移動位置；點積木選取後可重新選顏色。
+4. 拖曳或輕點積木形狀；積木列可以左右滑找其他形狀。
+5. 點「★ 收藏」儲存作品。首頁「我的作品館」可再次載入。
 
-本機以 Godot 4.5.2 開啟 project.godot。
+## Android GitHub Actions
+維持原本 repo 的 `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD` 固定簽章金鑰；使用相同 package ID 與連續遞增 versionCode，讓既有安裝可更新。完整執行 Godot 匯入、腳本檢查、2D 幾何與存檔測試及啟動測試，再用 Actions 金鑰產生 Release APK，憑證 SHA-256 相同才發布。
+
+**每次成功發布新 Release 後才刪除舊 Release 和 tag，只保留最新版**。CI 失敗時不會刪除目前能下載的版本。
+
+最新版：
+https://github.com/jimmy0933b3-sudo/my-blocks/releases/latest
+
+## 開發
+`godot --headless --editor --path . --import --quit`
+`godot --headless --path . --script tests/touch_2d_smoke.gd`
+
+原有 3D 腳本暫時保留原始碼以便資料相容或未來參考，但主場景已切換至 2D。 

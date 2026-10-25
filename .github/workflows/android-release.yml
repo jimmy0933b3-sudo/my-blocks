@@ -43,7 +43,9 @@ jobs:
         run: |
           godot --headless --editor --path . --import --quit
           for s in scripts/*.gd; do godot --headless --path . --check-only --script "$s"; done
-      - name: Test bricks, tutorials and save
+      - name: Test 2D drag-and-drop snap geometry and saved works
+        run: godot --headless --path . --script tests/touch_2d_smoke.gd
+      - name: Regression-test original brick data format
         run: godot --headless --path . --script tests/brick_smoke.gd
       - name: Test game startup
         run: |
@@ -105,7 +107,7 @@ jobs:
           gh release create "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt \
             --target "$GITHUB_SHA" --latest \
             --title "積木小宇宙 ${tag}｜最新版 APK" \
-            --notes "3D積木建造、30種尺寸、32種顏色、教學作品和自動儲存。通過遊戲測試與固定簽章驗證。"
+            --notes "2D滑動積木、12種形狀、32種顏色、四個引導作品與自動儲存。通過遊戲測試與固定簽章驗證。"
           # Delete only AFTER the replacement exists, even across multiple pages.
           gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --jq '.[].tag_name' | while IFS= read -r old; do
             [[ -z "$old" || "$old" == "$tag" ]] && continue
