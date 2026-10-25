@@ -41,7 +41,11 @@ func _initialize() -> void:
 		return
 	var blockers: Array = [
 		Core.make_piece(93,11,1,Vector2i(0,1)),
-		Core.make_piece(94,11,1,Vector2i(1,1))]
+		Core.make_piece(94,11,1,Vector2i(1,1)),
+		# All four rotated placements must be blocked, including newly
+		# supported negative coordinates to the left/top of the original grid.
+		Core.make_piece(97,11,1,Vector2i(0,-1)),
+		Core.make_piece(98,11,1,Vector2i(1,-1))]
 	var corner := Core.make_piece(95,0,0,Vector2i(0,0))
 	blockers.append(corner)
 	if not Core.turned_piece(corner,blockers).is_empty():
