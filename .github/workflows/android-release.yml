@@ -1,0 +1,127 @@
+name: Signed Android Release APK
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: my-blocks-release-main
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: 'false'
+          packages: ''
+      - name: Android API
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Godot 4.5.2 with export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.5.2
+          use-dotnet: false
+          include-templates: true
+      - name: Check all Godot resources and scripts
+        run: |
+          godot --headless --editor --path . --import --quit
+          for s in scripts/*.gd; do godot --headless --path . --check-only --script "$s"; done
+      - name: Test bricks, tutorials and save
+        run: godot --headless --path . --script tests/brick_smoke.gd
+      - name: Test game startup
+        run: |
+          godot --headless --path . --quit-after 8 > "$RUNNER_TEMP/smoke.log" 2>&1
+          cat "$RUNNER_TEMP/smoke.log"
+          if grep -E 'SCRIPT ERROR|Parse Error|Invalid call|Invalid access|ERROR:' "$RUNNER_TEMP/smoke.log"; then exit 1; fi
+      - name: Configure Android paths
+        run: godot --headless --editor --path . --script tools/configure_android.gd
+      - name: Restore fixed release signing key
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: python3 tools/prepare_signing.py
+      - name: Build signed Release APK
+        if: github.event_name != 'pull_request'
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ runner.temp }}/my-blocks-release.p12
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          test -s "$GODOT_ANDROID_KEYSTORE_RELEASE_PATH"
+          godot --headless --path . --export-release Android build/MyBlocks-signed.apk
+          test -s build/MyBlocks-signed.apk
+      - name: Verify APK certificate, package and version
+        if: github.event_name != 'pull_request'
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: python3 tools/verify_signed_apk.py
+      - name: Upload signed APK
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyBlocks-signed-APK
+          path: |
+            build/MyBlocks-signed.apk
+            build/SIGNING-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish new Release, then remove older releases
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/${GH_REPO}/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo "A newer main revision is available; stale release skipped."
+            exit 0
+          fi
+          tag="v0.1.${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt \
+            --target "$GITHUB_SHA" --latest \
+            --title "積木小宇宙 ${tag}｜最新版 APK" \
+            --notes "3D積木建造、30種尺寸、32種顏色、教學作品和自動儲存。通過遊戲測試與固定簽章驗證。"
+          # Delete only AFTER the replacement exists, even across multiple pages.
+          gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --jq '.[].tag_name' | while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$tag" ]] && continue
+            gh release delete "$old" --yes --cleanup-tag
+          done
+          gh release view "$tag" --json url,assets --jq '{url,assets:[.assets[].name]}'
+      - name: Keep just the newest signed APK artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const {owner,repo} = context.repo;
+            const all = await github.paginate(github.rest.actions.listArtifactsForRepo, {owner,repo,per_page:100});
+            const items = all.filter(x => x.name === 'MyBlocks-signed-APK' && !x.expired);
+            items.sort((a,b) => Number(b.workflow_run?.id||0)-Number(a.workflow_run?.id||0) || b.id-a.id);
+            for (const item of items.slice(1)) {
+              await github.rest.actions.deleteArtifact({owner,repo,artifact_id:item.id});
+            }
