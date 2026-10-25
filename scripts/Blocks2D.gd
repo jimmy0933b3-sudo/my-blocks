@@ -3,6 +3,8 @@ extends RefCounted
 const COLUMNS := 18
 const ROWS := 9
 const MAX_BRICKS := 160
+# Protect phones from enormous maps, while allowing expansion in every direction.
+const WORLD_LIMIT := 72
 const SHAPES: Array[Vector2i] = [
 	Vector2i(2,1),Vector2i(3,1),Vector2i(4,1),
 	Vector2i(2,2),Vector2i(3,2),Vector2i(4,2),
@@ -106,7 +108,7 @@ static func can_place(existing: Array, item: Dictionary, ignoring_id: int = -1) 
 	if not valid_piece(item):
 		return false
 	var rect := rect_of(item)
-	if rect.position.x < 0 or rect.position.y < 0 or rect.end.x > COLUMNS or rect.end.y > ROWS:
+	if rect.position.x < -WORLD_LIMIT or rect.position.y < -WORLD_LIMIT or rect.end.x > WORLD_LIMIT or rect.end.y > WORLD_LIMIT:
 		return false
 	if existing.size() >= MAX_BRICKS and ignoring_id == -1:
 		return false
