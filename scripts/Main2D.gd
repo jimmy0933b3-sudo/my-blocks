@@ -232,7 +232,7 @@ func _draw_brick(piece: Dictionary, highlighted: bool) -> void:
 func _paint_brick(rect: Rect2, paint: Color, dims: Vector2i, single_cell: float, highlighted: bool) -> void:
 	if highlighted:
 		_card(rect.grow(5.0),Color("#FFD66F"),11)
-	_card(rect.translated(Vector2(2.5,4.0)),paint.darkened(0.25),8)
+	_card(Rect2(rect.position+Vector2(2.5,4.0),rect.size),paint.darkened(0.25),8)
 	_card(Rect2(rect.position+Vector2(1,0),rect.size-Vector2(3,4)),paint,8)
 	draw_line(rect.position+Vector2(6,4),Vector2(rect.end.x-7,rect.position.y+4),paint.lightened(0.35),3.0)
 	var radius := maxf(3.2,minf(11.0,single_cell*0.17))
