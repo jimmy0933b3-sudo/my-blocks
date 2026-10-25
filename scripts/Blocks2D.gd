@@ -45,7 +45,9 @@ static func valid_piece(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
 	for key in ["id","kind","color","x","y"]:
-		if not data.has(key) or not (data[key] is int):
+		if not data.has(key) or not (data[key] is int or data[key] is float):
+			return false
+		if float(data[key]) != float(int(data[key])):
 			return false
 	return int(data["id"]) >= 1 and int(data["kind"]) >= 0 and int(data["kind"]) < SHAPES.size() and int(data["color"]) >= 0 and int(data["color"]) < COLORS.size()
 
