@@ -1,0 +1,9 @@
+.godot/
+build/
+*.jks
+*.keystore
+*.p12
+*.apk
+*.aab
+*.tmp
+.DS_Store
