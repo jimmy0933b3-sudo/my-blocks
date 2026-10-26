@@ -256,7 +256,7 @@ func _draw_menu() -> void:
 	for i in entries.size():
 		var item: Dictionary = entries[i]
 		var rect := Rect2(Vector2(x,start_y+float(i)*(row_height+gap)),Vector2(width,row_height))
-		_card(rect.translated(Vector2(0,4)),Color("#BCD9DC",0.75),20)
+		_card(Rect2(rect.position+Vector2(0,4),rect.size),Color("#BCD9DC",0.75),20)
 		_card(rect,palette[i%palette.size()],20,Color("#FFFFFF"))
 		if gallery and item.has("parts"):
 			var thumb := Rect2(rect.position+Vector2(13,9),Vector2(96,maxf(35.0,row_height-18.0)))
@@ -336,7 +336,7 @@ func _draw_game() -> void:
 		var width := 120.0 if i!=0 else 123.0
 		var rect := Rect2(Vector2(right-width,10),Vector2(width-5,57))
 		right -= width+6.0
-		_card(rect.translated(Vector2(0,3)),Color("#214E79",0.45),15)
+		_card(Rect2(rect.position+Vector2(0,3),rect.size),Color("#214E79",0.45),15)
 		_card(rect,button_colors[i],15)
 		_text(actions[i],rect.position+Vector2(12,36),21,Color("#31516B"))
 		toolbar_buttons.append({"rect":rect,"action":ids[i]})
@@ -354,7 +354,7 @@ func _draw_game() -> void:
 		var zoom_text := _fit_toolbar_hint("雙指縮放 %d%%" % roundi(zoom_factor*100.0),hint_area.size.x,16)
 		if not zoom_text.is_empty():
 			_text(zoom_text,Vector2(hint_area.position.x,59),16,Color("#E5F7FF"))
-	_card(board_area.translated(Vector2(0,4)),Color("#B7D7DF"),23)
+	_card(Rect2(board_area.position+Vector2(0,4),board_area.size),Color("#B7D7DF"),23)
 	_card(board_area,Color("#FFFEFA"),23,Color("#D9E9EC"))
 	var map_start := grid_origin+Vector2(canvas_bounds.position)*grid_cell
 	var map_end := map_start+Vector2(canvas_bounds.size)*grid_cell
@@ -409,7 +409,7 @@ func _draw_palette() -> void:
 		var rect := Rect2(Vector2(x,top+29),Vector2(105,69))
 		if rect.position.x < 6 or rect.end.x > size.x-7:
 			continue
-		_card(rect.translated(Vector2(0,3)),Color("#DCCAB0"),14)
+		_card(Rect2(rect.position+Vector2(0,3),rect.size),Color("#DCCAB0"),14)
 		_card(rect,Color("#FFFFFF") if i != selected_kind else Color("#FFE39F"),14,Color("#F3AB48") if i==selected_kind else Color("#E7DCCD"))
 		if i == selected_kind:
 			_card(Rect2(Vector2(x+15,top+29),Vector2(75,4)),Color("#F1AB4C"),2)
