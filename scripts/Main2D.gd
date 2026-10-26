@@ -34,6 +34,16 @@ var grid_cell := 40.0
 var canvas_bounds: Rect2i = Rect2i(0,0,Core.COLUMNS,Core.ROWS)
 var focus_cell := Vector2(Core.COLUMNS*0.5,Core.ROWS*0.5)
 var pan_offset := Vector2.ZERO
+# Relative to the automatic fit size. Manual pinch never changes brick coordinates.
+const MIN_ZOOM := 0.55
+const MAX_ZOOM := 3.0
+var zoom_factor := 1.0
+var touch_positions: Dictionary = {}
+var pinch_locked := false
+var pinch_active := false
+var pinch_begin_distance := 1.0
+var pinch_begin_zoom := 1.0
+var pinch_anchor_cell := Vector2.ZERO
 var menu_buttons: Array = []
 var toolbar_buttons: Array = []
 var touch_active := false
@@ -78,7 +88,7 @@ func _on_resized() -> void:
 
 func _layout() -> void:
 	board_area = Rect2(Vector2(18,TOP_HEIGHT+6),Vector2(maxf(200.0,size.x-36.0),maxf(120.0,size.y-TOP_HEIGHT-PALETTE_HEIGHT-18.0)))
-	grid_cell = CanvasBounds.fit_cell(board_area.size,canvas_bounds)
+	grid_cell = clampf(CanvasBounds.fit_cell(board_area.size,canvas_bounds)*zoom_factor,16.0,148.0)
 	var world_center := Vector2(canvas_bounds.position)+Vector2(canvas_bounds.size)*0.5
 	var center := world_center if CanvasBounds.fully_visible(board_area.size,canvas_bounds,grid_cell) else focus_cell
 	grid_origin = board_area.get_center()-center*grid_cell+pan_offset
@@ -87,14 +97,14 @@ func _layout() -> void:
 	var extent := Vector2(canvas_bounds.size)*grid_cell
 	var near := board_area.position+Vector2(7,7)
 	var far := board_area.end-Vector2(7,7)
-	if extent.x <= board_area.size.x-14:
+	if extent.x <= board_area.size.x-14 and is_equal_approx(zoom_factor,1.0):
 		grid_origin.x += board_area.get_center().x-(top_left.x+extent.x*0.5)
 	else:
-		grid_origin.x += clampf(top_left.x,far.x-extent.x,near.x)-top_left.x
-	if extent.y <= board_area.size.y-14:
+		grid_origin.x += clampf(top_left.x,mini(near.x,far.x-extent.x),maxf(near.x,far.x-extent.x))-top_left.x
+	if extent.y <= board_area.size.y-14 and is_equal_approx(zoom_factor,1.0):
 		grid_origin.y += board_area.get_center().y-(top_left.y+extent.y*0.5)
 	else:
-		grid_origin.y += clampf(top_left.y,far.y-extent.y,near.y)-top_left.y
+		grid_origin.y += clampf(top_left.y,minf(near.y,far.y-extent.y),maxf(near.y,far.y-extent.y))-top_left.y
 	pan_offset = grid_origin-(board_area.get_center()-center*grid_cell)
 
 func _refresh_canvas(focus: Vector2 = Vector2(INF,INF)) -> void:
@@ -216,6 +226,7 @@ func _draw_game() -> void:
 		message = "完成了！太棒了！記得按右上角的「收藏」"
 	_card(Rect2(board_area.position+Vector2(10,9),Vector2(minf(board_area.size.x-20,680),38)),Color("#F0F8F4"),12)
 	_text(message,board_area.position+Vector2(23,36),20,Color("#54856A"))
+	_text("雙指縮放 %d%%" % roundi(zoom_factor*100.0),board_area.position+Vector2(board_area.size.x-184,35),17,Color("#4E87A9"))
 	if page == "guide" and guide_step < guide_parts.size():
 		var target: Dictionary = guide_parts[guide_step]
 		var target_box := _brick_rect(target)
@@ -734,25 +745,104 @@ func _pointer_up(point: Vector2) -> void:
 	dragged_id = -1
 	queue_redraw()
 
+func _touch_points() -> Array:
+	return touch_positions.values()
+
+func _start_pinch() -> void:
+	# Cancel any unfinished one-finger action. Never place, move, recolor or
+	# rotate a brick as a side effect of adding or lifting the second finger.
+	pinch_locked = true
+	pressed = false
+	gesture = ""
+	dragged_id = -1
+	pressed_shape = -1
+	pressed_color = -1
+	preview_cell = Vector2i(-100,-100)
+	last_tap_target = ""
+	var positions := _touch_points()
+	if positions.size() < 2:
+		return
+	var a: Vector2 = positions[0]
+	var b: Vector2 = positions[1]
+	var middle := (a+b)*0.5
+	pinch_active = (page == "play" or page == "guide") and board_area.has_point(a) and board_area.has_point(b)
+	if not pinch_active:
+		queue_redraw()
+		return
+	pinch_begin_distance = maxf(20.0,a.distance_to(b))
+	pinch_begin_zoom = zoom_factor
+	pinch_anchor_cell = (middle-grid_origin)/grid_cell
+	queue_redraw()
+
+func _update_pinch() -> void:
+	if not pinch_active or touch_positions.size() < 2:
+		return
+	var positions := _touch_points()
+	var a: Vector2 = positions[0]
+	var b: Vector2 = positions[1]
+	var center := (a+b)*0.5
+	var ratio := maxf(1.0,a.distance_to(b))/pinch_begin_distance
+	zoom_factor = clampf(pinch_begin_zoom*ratio,MIN_ZOOM,MAX_ZOOM)
+	_layout()
+	# Keep the logical point between the fingers in roughly the same place.
+	# This also follows two fingers moved together, acting as a pan gesture.
+	pan_offset += center-(grid_origin+pinch_anchor_cell*grid_cell)
+	_layout()
+	queue_redraw()
+
+func _touch_begin(index: int, point: Vector2) -> void:
+	touch_positions[index] = point
+	touch_active = true
+	if touch_positions.size() == 1 and not pinch_locked:
+		_pointer_down(point)
+	elif touch_positions.size() >= 2 and not pinch_locked:
+		_start_pinch()
+	queue_redraw()
+
+func _touch_dragged(index: int, point: Vector2) -> void:
+	if not touch_positions.has(index):
+		return
+	touch_positions[index] = point
+	if pinch_locked:
+		_update_pinch()
+	elif touch_positions.size() == 1:
+		_pointer_move(point)
+
+func _touch_end(index: int, point: Vector2) -> void:
+	if not touch_positions.has(index):
+		return
+	touch_positions.erase(index)
+	if pinch_locked:
+		if touch_positions.size() < 2:
+			pinch_active = false
+		if touch_positions.is_empty():
+			pinch_locked = false
+			notice = "雙指縮放完成，還可以繼續滑積木！"
+	else:
+		if touch_positions.is_empty():
+			_pointer_up(point)
+	touch_active = not touch_positions.is_empty()
+	queue_redraw()
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		last_touch_msec = Time.get_ticks_msec()
-		touch_active = event.pressed
 		if event.pressed:
-			_pointer_down(event.position)
+			_touch_begin(event.index,event.position)
 		else:
-			_pointer_up(event.position)
+			_touch_end(event.index,event.position)
 		accept_event()
 	elif event is InputEventScreenDrag:
-		_pointer_move(event.position)
+		last_touch_msec = Time.get_ticks_msec()
+		_touch_dragged(event.index,event.position)
 		accept_event()
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not touch_active and Time.get_ticks_msec()-last_touch_msec > 550:
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not touch_active and not pinch_locked and Time.get_ticks_msec()-last_touch_msec > 550:
 		if event.pressed:
 			_pointer_down(event.position)
 		else:
 			_pointer_up(event.position)
 		accept_event()
-	elif event is InputEventMouseMotion and pressed and not touch_active and Time.get_ticks_msec()-last_touch_msec > 550:
+	elif event is InputEventMouseMotion and pressed and not touch_active and not pinch_locked and Time.get_ticks_msec()-last_touch_msec > 550:
 		_pointer_move(event.position)
 		accept_event()
 
