@@ -501,6 +501,8 @@ func _perform(action: String) -> void:
 					_archive_existing()
 					_restore(list[index])
 					_continue()
+					# Persist the opened work identity even if the app closes before editing.
+					_save_now()
 	queue_redraw()
 
 func _undo() -> void:
