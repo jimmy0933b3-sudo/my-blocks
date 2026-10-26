@@ -100,6 +100,60 @@ func _initialize() -> void:
 		fail_case("Expanded map must remain interactive")
 		return
 	viewport.free()
+	# Simulate two simultaneous Android fingers: zoom in, zoom out, track midpoint,
+	# reject accidental brick edits, then allow ordinary one-finger gestures.
+	var touch_game := Game.new()
+	touch_game.page = "play"
+	touch_game.size = Vector2(1280,720)
+	touch_game._refresh_canvas()
+	var middle: Vector2 = touch_game.board_area.get_center()
+	var original_size := touch_game.grid_cell
+	var first := middle+Vector2(-60,0)
+	var second := middle+Vector2(60,0)
+	touch_game._touch_begin(0,first)
+	if not touch_game.pressed:
+		fail_case("Single finger should remain an ordinary tap")
+		return
+	touch_game._touch_begin(1,second)
+	if not touch_game.pinch_active or touch_game.pressed or not touch_game.pinch_locked:
+		fail_case("Second finger must cancel any pending placement")
+		return
+	var world_anchor := (middle-touch_game.grid_origin)/touch_game.grid_cell
+	touch_game._touch_dragged(0,middle+Vector2(-100,0))
+	touch_game._touch_dragged(1,middle+Vector2(100,0))
+	if touch_game.grid_cell <= original_size or touch_game.zoom_factor <= 1.0:
+		fail_case("Two fingers spread must zoom the map in")
+		return
+	var after_anchor := (middle-touch_game.grid_origin)/touch_game.grid_cell
+	if world_anchor.distance_to(after_anchor) > 0.7:
+		fail_case("Pinch zoom moved the central map point too far")
+		return
+	touch_game._touch_dragged(0,middle+Vector2(-30,0))
+	touch_game._touch_dragged(1,middle+Vector2(30,0))
+	if touch_game.grid_cell >= original_size or touch_game.zoom_factor >= 1.0:
+		fail_case("Two fingers moved together must zoom the map out")
+		return
+	touch_game._touch_end(1,middle+Vector2(30,0))
+	if not touch_game.pinch_locked or touch_game.pressed:
+		fail_case("The last finger must not resume a half-finished brick gesture")
+		return
+	touch_game._touch_end(0,middle+Vector2(-30,0))
+	if touch_game.pinch_locked or not touch_game.touch_positions.is_empty():
+		fail_case("Pinch lock must clear when both fingers are lifted")
+		return
+	if not touch_game.pieces.is_empty() or not touch_game.history.is_empty():
+		fail_case("Pinch must not place, move or rotate any bricks")
+		return
+	touch_game._touch_begin(0,middle)
+	if not touch_game.pressed:
+		fail_case("Normal one-finger control must recover after pinch")
+		return
+	touch_game._touch_dragged(0,middle+Vector2(70,0))
+	touch_game._touch_end(0,middle+Vector2(70,0))
+	if touch_game.pressed or touch_game.pinch_locked:
+		fail_case("Normal gesture did not end cleanly after pinch")
+		return
+	touch_game.free()
 	if not Store.autosave(edge_parts,"擴充畫布測試"):
 		fail_case("Cannot save pieces beyond old 18x9 area")
 		return
@@ -170,5 +224,5 @@ func _initialize() -> void:
 	if not Store.autosave([old_shape],"舊版測試") or Core.rect_of(Store.load_autosave()["pieces"][0]).size!=Vector2i(1,2):
 		fail_case("Legacy shape not retained through save/restore")
 		return
-	print("PASS: automatically growing 2D map, minimum touch size, all-edge extension, double-tap rotation, collisions, guide steps, old and new saves")
+	print("PASS: 2-finger pinch zoom in/out, touch cancellation, pan, expanding map, rotation, guides, legacy saves")
 	quit(0)
