@@ -12,6 +12,27 @@ func _initialize() -> void:
 	if Core.PALETTE_KINDS.size() != 8 or Core.COLORS.size() != 32:
 		fail_case("Missing 2D pieces or colors")
 		return
+	# Visual regression: a collection with many works must be paginated and
+	# menu labels must not extend beyond their cards.
+	var ui := Game.new()
+	ui.size = Vector2(1280,720)
+	if ui._gallery_page_capacity() < 3 or ui._gallery_page_count(19) <= 1:
+		fail_case("Gallery must paginate without shrinking cards")
+		return
+	ui.gallery_page = 0
+	ui._perform("gallery_next")
+	if ui.gallery_page > ui._gallery_page_count(Store.list_gallery().size())-1:
+		fail_case("Gallery next must clamp to the last available page")
+		return
+	var long_menu_name := "這是一個很長很長很長很長很長的孩子的積木作品名字"
+	var clipped := ui._menu_label(long_menu_name,200.0,24)
+	if clipped.is_empty() or ui._font().get_string_size(clipped,HORIZONTAL_ALIGNMENT_LEFT,-1,24).x > 200.5:
+		fail_case("Menu title must clip cleanly to card width")
+		return
+	if not ui._menu_label("abc",0.0,20).is_empty():
+		fail_case("No text should render without room")
+		return
+	ui.free()
 	# Palette never repeats the same size in rotated orientation.
 	var unique: Dictionary = {}
 	for kind in Core.PALETTE_KINDS:

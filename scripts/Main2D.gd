@@ -47,6 +47,7 @@ var pinch_begin_distance := 1.0
 var pinch_begin_zoom := 1.0
 var pinch_anchor_cell := Vector2.ZERO
 var menu_buttons: Array = []
+var gallery_page := 0
 var toolbar_buttons: Array = []
 var touch_active := false
 var pressed := false
@@ -135,62 +136,165 @@ func _card(rect: Rect2, color: Color, radius: int = 16, stroke: Color = Color.TR
 	draw_style_box(box,rect)
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO,size),Color("#DFF4FC"))
+	draw_rect(Rect2(Vector2.ZERO,size),Color("#E8F6FB"))
+	draw_circle(Vector2(size.x+45.0,90.0),178.0,Color("#D9F0F3"))
+	draw_circle(Vector2(-40.0,size.y-80.0),170.0,Color("#DFF3DF"))
+	draw_circle(Vector2(size.x*0.5,size.y+140.0),205.0,Color("#FBF1DC"))
 	if page == "home" or page == "guides" or page == "gallery":
 		_draw_menu()
 	else:
 		_draw_game()
 
+func _menu_label(text_value: String, limit: float, font_size: int) -> String:
+	# Shortened labels stay within the touch card instead of painting over the arrow.
+	if limit <= 0.0:
+		return ""
+	if _font().get_string_size(text_value,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x <= limit:
+		return text_value
+	var result := text_value
+	while not result.is_empty():
+		result = result.substr(0,result.length()-1)
+		if _font().get_string_size(result+"…",HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x <= limit:
+			return result+"…"
+	return ""
+
+func _gallery_page_capacity() -> int:
+	return clampi(floori((size.y-310.0)/94.0),1,5)
+
+func _gallery_page_count(total: int) -> int:
+	return maxi(1,ceili(float(total)/float(_gallery_page_capacity())))
+
+func _draw_hero_bricks() -> void:
+	if size.x < 760.0:
+		return
+	var right := size.x-122.0
+	_paint_brick(Rect2(Vector2(right-136,77),Vector2(92,46)),Color("#FFD36D"),Vector2i(2,1),46.0,false)
+	_paint_brick(Rect2(Vector2(right-34,49),Vector2(36,72)),Color("#79DBCF"),Vector2i(1,2),36.0,false)
+	_paint_brick(Rect2(Vector2(right-128,38),Vector2(36,36)),Color("#FF97A6"),Vector2i(1,1),36.0,false)
+
+func _draw_work_thumbnail(rect: Rect2, parts: Array) -> void:
+	_card(rect,Color("#EEF7F9"),13,Color("#D9EBF0"))
+	if parts.is_empty():
+		return
+	var min_x := 99999
+	var min_y := 99999
+	var max_x := -99999
+	var max_y := -99999
+	for part in parts:
+		var bounds: Rect2i = Core.rect_of(part)
+		min_x = mini(min_x,bounds.position.x)
+		min_y = mini(min_y,bounds.position.y)
+		max_x = maxi(max_x,bounds.end.x)
+		max_y = maxi(max_y,bounds.end.y)
+	var unit := minf((rect.size.x-18.0)/float(maxi(1,max_x-min_x)),(rect.size.y-16.0)/float(maxi(1,max_y-min_y)))
+	var total := Vector2(max_x-min_x,max_y-min_y)*unit
+	var offset := rect.get_center()-total*0.5
+	for part in parts:
+		var bounds: Rect2i = Core.rect_of(part)
+		var at := offset+Vector2(bounds.position-Vector2i(min_x,min_y))*unit
+		var shape := Rect2(at,Vector2(bounds.size)*unit)
+		var paint := Core.color_for(int(part["color"]))
+		draw_rect(shape.grow(-0.6),paint,true)
+		if unit >= 9.0:
+			for ix in bounds.size.x:
+				for iy in bounds.size.y:
+					draw_circle(at+Vector2(float(ix)+0.5,float(iy)+0.5)*unit,minf(3.0,unit*0.18),paint.lightened(0.23))
+
 func _draw_menu() -> void:
 	menu_buttons.clear()
 	toolbar_buttons.clear()
+	var home := page == "home"
+	var gallery := page == "gallery"
 	var title := "積木小宇宙"
-	var subtitle := "滑一滑，拼出你的小小世界！"
+	var subtitle := "發揮想像力，拼出獨一無二的小世界"
 	if page == "guides":
 		title = "跟著圖案玩"
-		subtitle = "把積木拖到亮亮的提示框裡"
-	elif page == "gallery":
+		subtitle = "選一張圖，邊玩邊學會拼積木"
+	elif gallery:
 		title = "我的作品館"
-		subtitle = "每個小作品都值得被收藏"
-	_card(Rect2(Vector2(22,20),Vector2(size.x-44,size.y-40)),Color("#FFFDF7"),25)
-	_text("✦",Vector2(size.x*0.5-245,104),40,Color("#FFB85A"))
-	_text(title,Vector2(size.x*0.5-155,108),43,Color("#447DA6"))
-	_text(subtitle,Vector2(size.x*0.5-196,151),23,Color("#7B95A3"))
-	var labels: Array = []
-	var actions: Array = []
-	if page == "home":
+		subtitle = "每一個小創作，都值得好好收藏"
+	# A toy-themed hero with generous breathing room and physical brick shapes.
+	_card(Rect2(Vector2(26,29),Vector2(size.x-52.0,150)),Color("#B5DEE5"),29)
+	_card(Rect2(Vector2(26,22),Vector2(size.x-52.0,150)),Color("#377EAA"),29)
+	draw_circle(Vector2(size.x-155.0,48),58.0,Color("#5C9CC2",0.48))
+	draw_circle(Vector2(55.0,42),29.0,Color("#7ECED4",0.26))
+	var title_size := 40 if size.x > 590.0 else 32
+	_text(title,Vector2(62,87),title_size,Color.WHITE)
+	_text(_menu_label(subtitle,size.x-135.0 if size.x < 760.0 else size.x-380.0,21),Vector2(64,129),21,Color("#DEF9FF"))
+	_draw_hero_bricks()
+	var entries: Array = []
+	if home:
 		if not pieces.is_empty():
-			labels.append("繼續玩我的積木")
-			actions.append("continue")
-		labels.append_array(["開始新作品","跟著圖案玩","我的作品館"])
-		actions.append_array(["new","guides","gallery"])
+			entries.append({"action":"continue","label":"繼續我的作品","detail":"接著拼完剛剛的小世界","icon":"▶"})
+		entries.append({"action":"new","label":"開始新作品","detail":"自由發揮，想拼什麼都可以","icon":"＋"})
+		entries.append({"action":"guides","label":"跟著圖案玩","detail":"從房子、汽車和花朵開始","icon":"✦"})
+		entries.append({"action":"gallery","label":"我的作品館","detail":"看看收藏的積木作品","icon":"★"})
 	elif page == "guides":
 		for i in Guides.NAMES.size():
-			labels.append(Guides.NAMES[i])
-			actions.append("guide:%d" % i)
-		labels.append("返回首頁")
-		actions.append("home")
+			entries.append({"action":"guide:%d" % i,"label":Guides.NAMES[i],"detail":"跟著亮亮的提示，一塊一塊完成","icon":"✦"})
+		entries.append({"action":"home","label":"返回首頁","detail":"回到積木小宇宙","icon":"⌂"})
 	else:
 		var saves := Store.list_gallery()
-		for i in mini(saves.size(),5):
-			var work: Dictionary = saves[i]
-			labels.append("%s   ·   %d 塊積木" % [str(work.get("title","我的作品")),work["pieces"].size()])
-			actions.append("gallery:%d" % i)
-		if labels.is_empty():
-			_text("還沒有作品，先玩一個吧！",Vector2(size.x*0.5-200,size.y*0.5),25)
-		labels.append("返回首頁")
-		actions.append("home")
-	var button_height := minf(79.0,maxf(54.0,(size.y-228)/maxi(1,labels.size())))
-	var gap := 9.0
-	var start_y := 180.0
-	for i in labels.size():
-		var rect := Rect2(Vector2(size.x*0.5-270,start_y+i*(button_height+gap)),Vector2(540,button_height))
-		var shade := Color("#FFE7AC") if i%3==0 else (Color("#CFF0DE") if i%3==1 else Color("#D7EAFB"))
-		_card(rect,shade,22)
-		var label := str(labels[i])
-		_text(label,rect.position+Vector2(36,button_height*0.5+9),26,Color("#365D73"))
-		_text("›",rect.position+Vector2(rect.size.x-43,button_height*0.5+11),35,Color("#4B83A0"))
-		menu_buttons.append({"rect":rect,"action":str(actions[i])})
+		var total_pages := _gallery_page_count(saves.size())
+		gallery_page = clampi(gallery_page,0,total_pages-1)
+		var start := gallery_page*_gallery_page_capacity()
+		for index in range(start,mini(saves.size(),start+_gallery_page_capacity())):
+			var doc: Dictionary = saves[index]
+			entries.append({"action":"gallery:%d" % index,"label":str(doc.get("title","我的作品")),"detail":"%d 塊積木  ·  點一下繼續玩" % doc["pieces"].size(),"icon":"★","parts":doc["pieces"]})
+		if saves.is_empty():
+			entries.append({"action":"none","label":"還沒有收藏的作品","detail":"先開始拼一個，按收藏就會出現在這裡","icon":"☆"})
+	# Use size-aware rows so the visible controls stay finger-friendly.
+	var width := minf(820.0,maxf(260.0,size.x-84.0))
+	var x := (size.x-width)*0.5
+	var start_y := 200.0
+	var footer_space := 77.0 if gallery else 26.0
+	var available := maxf(215.0,size.y-start_y-footer_space-20.0)
+	var gap := 11.0
+	var row_height := clampf((available-gap*float(maxi(0,entries.size()-1)))/float(maxi(1,entries.size())),54.0,90.0)
+	var palette: Array[Color] = [Color("#FFF0CD"),Color("#DDF6F0"),Color("#E5F0FF"),Color("#FCE8F3"),Color("#EEE9FF")]
+	var accents: Array[Color] = [Color("#EAB65F"),Color("#47BBA4"),Color("#629DDF"),Color("#D986AE"),Color("#9979D4")]
+	for i in entries.size():
+		var item: Dictionary = entries[i]
+		var rect := Rect2(Vector2(x,start_y+float(i)*(row_height+gap)),Vector2(width,row_height))
+		_card(rect.translated(Vector2(0,4)),Color("#BCD9DC",0.75),20)
+		_card(rect,palette[i%palette.size()],20,Color("#FFFFFF"))
+		if gallery and item.has("parts"):
+			var thumb := Rect2(rect.position+Vector2(13,9),Vector2(96,maxf(35.0,row_height-18.0)))
+			_draw_work_thumbnail(thumb,item["parts"])
+		else:
+			var icon_center := rect.position+Vector2(47,row_height*0.5)
+			draw_circle(icon_center,25.0,accents[i%accents.size()])
+			_text(str(item["icon"]),icon_center+Vector2(-12,9),27,Color.WHITE)
+		var label_x := 128.0 if gallery and item.has("parts") else 91.0
+		var text_left := rect.position.x+label_x
+		var max_text := maxf(20.0,rect.size.x-label_x-51.0)
+		var title_font := 25 if row_height > 70.0 else 21
+		var title_y := rect.position.y+(row_height*0.5 if row_height < 70.0 else 37.0)
+		_text(_menu_label(str(item["label"]),max_text,title_font),Vector2(text_left,title_y),title_font,Color("#31516B"))
+		if row_height >= 70.0:
+			_text(_menu_label(str(item["detail"]),max_text,17),Vector2(text_left,rect.position.y+63),17,Color("#648596"))
+		_text("›",rect.position+Vector2(rect.size.x-38,row_height*0.5+10),30,Color("#547C96"))
+		if str(item["action"]) != "none":
+			menu_buttons.append({"rect":rect,"action":str(item["action"])})
+	if gallery:
+		# Pagination exposes every saved work without shrinking gallery cards.
+		var previous := Rect2(Vector2(x,size.y-83.0),Vector2(132,54))
+		var next := Rect2(Vector2(x+width-132.0,size.y-83.0),Vector2(132,54))
+		_card(previous,Color("#DFEAF6") if gallery_page > 0 else Color("#E5EBEF"),14)
+		_card(next,Color("#DFEAF6") if gallery_page+1 < _gallery_page_count(Store.list_gallery().size()) else Color("#E5EBEF"),14)
+		_text("‹ 上一頁",previous.position+Vector2(14,34),21,Color("#315E82"))
+		_text("下一頁 ›",next.position+Vector2(13,34),21,Color("#315E82"))
+		_text("%d / %d" % [gallery_page+1,_gallery_page_count(Store.list_gallery().size())],Vector2(size.x*0.5-23,size.y-50.0),22,Color("#537A8B"))
+		if gallery_page > 0:
+			menu_buttons.append({"rect":previous,"action":"gallery_prev"})
+		if gallery_page+1 < _gallery_page_count(Store.list_gallery().size()):
+			menu_buttons.append({"rect":next,"action":"gallery_next"})
+		# Always offer the way back, even when the collection is empty.
+		var back_rect := Rect2(Vector2(20,size.y-80.0),Vector2(120,50))
+		if x > 160.0:
+			_card(back_rect,Color("#FFFFFF"),14)
+			_text("⌂ 返回",back_rect.position+Vector2(14,32),19,Color("#47748C"))
+			menu_buttons.append({"rect":back_rect,"action":"home"})
 
 func _toolbar_hint_rect(home_left: float) -> Rect2:
 	# The instruction lives entirely inside the blue header, between the
@@ -221,17 +325,20 @@ func _fit_toolbar_hint(message: String, available: float, font_size: int = 18) -
 func _draw_game() -> void:
 	menu_buttons.clear()
 	toolbar_buttons.clear()
-	_card(Rect2(Vector2.ZERO,Vector2(size.x,TOP_HEIGHT)),Color("#65A6D7"),0)
+	_card(Rect2(Vector2.ZERO,Vector2(size.x,TOP_HEIGHT)),Color("#376F9F"),0)
+	draw_rect(Rect2(Vector2(0,TOP_HEIGHT-5),Vector2(size.x,5)),Color("#79C7D5"))
 	_text("積木小宇宙",Vector2(22,50),29,Color.WHITE)
 	var actions := ["回首頁","↶ 復原","✕ 刪除","★ 收藏"]
 	var ids := ["home","undo","delete","save"]
 	var right := size.x-14.0
+	var button_colors: Array[Color] = [Color("#D9F3FF"),Color("#E2F5E9"),Color("#FFE5DC"),Color("#FFE6AD")]
 	for i in range(actions.size()-1,-1,-1):
 		var width := 120.0 if i!=0 else 123.0
 		var rect := Rect2(Vector2(right-width,10),Vector2(width-5,57))
 		right -= width+6.0
-		_card(rect,Color("#FFF1CC"),15)
-		_text(actions[i],rect.position+Vector2(12,36),21)
+		_card(rect.translated(Vector2(0,3)),Color("#214E79",0.45),15)
+		_card(rect,button_colors[i],15)
+		_text(actions[i],rect.position+Vector2(12,36),21,Color("#31516B"))
 		toolbar_buttons.append({"rect":rect,"action":ids[i]})
 	# Keep the map completely unobstructed: move both the instruction and
 	# the pinch-zoom percentage into the area just left of "回首頁".
@@ -247,7 +354,8 @@ func _draw_game() -> void:
 		var zoom_text := _fit_toolbar_hint("雙指縮放 %d%%" % roundi(zoom_factor*100.0),hint_area.size.x,16)
 		if not zoom_text.is_empty():
 			_text(zoom_text,Vector2(hint_area.position.x,59),16,Color("#E5F7FF"))
-	_card(board_area,Color("#FFFFFF"),22)
+	_card(board_area.translated(Vector2(0,4)),Color("#B7D7DF"),23)
+	_card(board_area,Color("#FFFEFA"),23,Color("#D9E9EC"))
 	var map_start := grid_origin+Vector2(canvas_bounds.position)*grid_cell
 	var map_end := map_start+Vector2(canvas_bounds.size)*grid_cell
 	var visible_left := maxf(board_area.position.x+5.0,map_start.x)
@@ -291,7 +399,9 @@ func _draw_game() -> void:
 
 func _draw_palette() -> void:
 	var top := size.y-PALETTE_HEIGHT
-	_card(Rect2(Vector2(0,top),Vector2(size.x,PALETTE_HEIGHT)),Color("#FFF2DB"),19)
+	_card(Rect2(Vector2(0,top+3),Vector2(size.x,PALETTE_HEIGHT)),Color("#E8CDAC"),20)
+	_card(Rect2(Vector2(0,top),Vector2(size.x,PALETTE_HEIGHT)),Color("#FFF2DD"),20)
+	draw_line(Vector2(18,top+2),Vector2(size.x-18,top+2),Color("#F1D2A5"),3.0)
 	_text("積木：點兩下 ↻ 轉方向，左右滑換積木",Vector2(24,top+23),19,Color("#8A6A4B"))
 	for slot in range(Core.PALETTE_KINDS.size()):
 		var i: int = Core.PALETTE_KINDS[slot]
@@ -299,7 +409,10 @@ func _draw_palette() -> void:
 		var rect := Rect2(Vector2(x,top+29),Vector2(105,69))
 		if rect.position.x < 6 or rect.end.x > size.x-7:
 			continue
-		_card(rect,Color("#FFFFFF") if i != selected_kind else Color("#FCE8B0"),14,Color("#F5BC66") if i==selected_kind else Color("#E5E0DA"))
+		_card(rect.translated(Vector2(0,3)),Color("#DCCAB0"),14)
+		_card(rect,Color("#FFFFFF") if i != selected_kind else Color("#FFE39F"),14,Color("#F3AB48") if i==selected_kind else Color("#E7DCCD"))
+		if i == selected_kind:
+			_card(Rect2(Vector2(x+15,top+29),Vector2(75,4)),Color("#F1AB4C"),2)
 		var shape := Core.size_for(i,int(palette_rotations.get(i,0)))
 		var cell := minf(23.0, minf(81.0/float(shape.x),40.0/float(shape.y)))
 		var bounds := Rect2(Vector2(x+(105-shape.x*cell)*0.5,top+36+(40-shape.y*cell)*0.5),Vector2(shape)*cell)
@@ -313,10 +426,12 @@ func _draw_palette() -> void:
 		if cx < 125 or cx > size.x-24:
 			continue
 		var cy := top+132.0
-		draw_circle(Vector2(cx,cy),24.0,Color.WHITE if selected_color==i else Color("#D4DADD"))
+		draw_circle(Vector2(cx,cy+2.0),25.0,Color("#D5C2AA"))
+		draw_circle(Vector2(cx,cy),24.0,Color("#FFFFFF") if selected_color==i else Color("#F8E4C9"))
 		draw_circle(Vector2(cx,cy),20.0,Core.color_for(i))
+		draw_circle(Vector2(cx-5.0,cy-6.0),4.0,Color("#FFFFFF",0.35))
 		if i == selected_color:
-			draw_arc(Vector2(cx,cy),26.0,0.0,TAU,32,Color("#6E789B"),3.0)
+			draw_arc(Vector2(cx,cy),27.0,0.0,TAU,32,Color("#536FB8"),3.4)
 
 func _brick_rect(piece: Dictionary) -> Rect2:
 	var cell := Core.cell_of(piece)
@@ -331,8 +446,10 @@ func _draw_brick(piece: Dictionary, highlighted: bool) -> void:
 func _paint_brick(rect: Rect2, paint: Color, dims: Vector2i, single_cell: float, highlighted: bool) -> void:
 	if highlighted:
 		_card(rect.grow(5.0),Color("#FFD66F"),11)
-	_card(Rect2(rect.position+Vector2(2.5,4.0),rect.size),paint.darkened(0.25),8)
+	_card(Rect2(rect.position+Vector2(2.5,4.0),rect.size),paint.darkened(0.28),8)
 	_card(Rect2(rect.position+Vector2(1,0),rect.size-Vector2(3,4)),paint,8)
+	# Raised stud shading makes these small pieces feel more tactile.
+	draw_line(rect.position+Vector2(4,rect.size.y-5),Vector2(rect.end.x-5,rect.end.y-5),paint.darkened(0.13),1.6)
 	draw_line(rect.position+Vector2(6,4),Vector2(rect.end.x-7,rect.position.y+4),paint.lightened(0.35),3.0)
 	var radius := maxf(3.2,minf(11.0,single_cell*0.17))
 	for x in dims.x:
@@ -484,7 +601,12 @@ func _perform(action: String) -> void:
 			page = "guides"
 		"gallery":
 			# Listing a collection must never perform an implicit Save As.
+			gallery_page = 0
 			page = "gallery"
+		"gallery_next":
+			gallery_page = mini(_gallery_page_count(Store.list_gallery().size())-1,gallery_page+1)
+		"gallery_prev":
+			gallery_page = maxi(0,gallery_page-1)
 		"undo":
 			_undo()
 		"delete":
