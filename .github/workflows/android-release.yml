@@ -116,7 +116,7 @@ jobs:
             elif gh release create "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt \
               --target "$GITHUB_SHA" --latest \
               --title "積木小宇宙 ${tag}｜最新版 APK" \
-              --notes "2D滑動積木、雙指捏合放大縮小、地圖自動延伸、雙點旋轉、8種積木形狀、32色、教學關卡及自動儲存。通過遊戲測試與固定簽章驗證。"; then
+              --notes "2D滑動積木、提示移至首頁按鈕左側、雙指縮放、地圖自動延伸、雙點旋轉、8種積木形狀、32色、教學關卡及自動儲存。通過遊戲測試與固定簽章驗證。"; then
               published=true
               break
             fi

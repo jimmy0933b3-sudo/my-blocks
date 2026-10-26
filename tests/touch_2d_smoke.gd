@@ -66,6 +66,29 @@ func _initialize() -> void:
 		fail_case("Different brick must reset double-tap recognition")
 		return
 	gesture.free()
+	# Hints and the pinch-zoom label must live within the top toolbar rather
+	# than the playable map or the Home button, even on narrow screens.
+	var header_game := Game.new()
+	var header_space: Rect2 = header_game._toolbar_hint_rect(765.0)
+	if header_space.size.x < 100.0 or header_space.position.y < 0.0 or header_space.end.y > Game.TOP_HEIGHT:
+		fail_case("Instruction area should be inside the top toolbar")
+		return
+	if header_space.end.x > 765.0 or header_space.position.x < 200.0:
+		fail_case("Instruction text overlaps the title or Home button")
+		return
+	var long_tip := "積木小宇宙的說明文字不能超出回首頁按鈕左邊或遮蓋底下畫布"
+	var fitted := header_game._fit_toolbar_hint(long_tip,header_space.size.x,18)
+	if fitted.is_empty() or header_game._font().get_string_size(fitted,HORIZONTAL_ALIGNMENT_LEFT,-1,18).x > header_space.size.x+0.01:
+		fail_case("Long instruction did not fit safely in header")
+		return
+	if not header_game._fit_toolbar_hint(long_tip,0.0,18).is_empty():
+		fail_case("Instruction must disappear when no free header space remains")
+		return
+	var narrow_header := header_game._toolbar_hint_rect(190.0)
+	if narrow_header.size.x != 0.0 or not header_game._fit_toolbar_hint("太窄",narrow_header.size.x).is_empty():
+		fail_case("Narrow screen hint may overlap toolbar buttons")
+		return
+	header_game.free()
 	# The floor grows when blocks approach the top, left, right or bottom.
 	var Bounds = preload("res://scripts/CanvasBounds2D.gd")
 	var default_bounds: Rect2i = Bounds.bounds_for([])
@@ -224,5 +247,5 @@ func _initialize() -> void:
 	if not Store.autosave([old_shape],"舊版測試") or Core.rect_of(Store.load_autosave()["pieces"][0]).size!=Vector2i(1,2):
 		fail_case("Legacy shape not retained through save/restore")
 		return
-	print("PASS: 2-finger pinch zoom in/out, touch cancellation, pan, expanding map, rotation, guides, legacy saves")
+	print("PASS: hint moved into toolbar without overlap, 2-finger pinch, touch cancellation, pan, expanding map, rotation, guides, legacy saves")
 	quit(0)
