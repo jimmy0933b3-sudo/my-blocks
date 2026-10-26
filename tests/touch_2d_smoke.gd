@@ -248,5 +248,84 @@ func _initialize() -> void:
 	if not Store.autosave([old_shape],"舊版測試") or Core.rect_of(Store.load_autosave()["pieces"][0]).size!=Vector2i(1,2):
 		fail_case("Legacy shape not retained through save/restore")
 		return
+	# Viewing and re-opening a collected work must never generate another file.
+	# Earlier app versions archived the current work on every gallery click.
+	var initial_count := Store.list_gallery().size()
+	var gallery_bricks: Array = [
+		Core.make_piece(81001,0,4,Vector2i(8,4)),
+		Core.make_piece(81002,1,6,Vector2i(1,2))
+	]
+	var gallery_title := "作品館重複測試"
+	var first_path := Store.save_work(gallery_bricks,gallery_title)
+	if first_path.is_empty() or not Store.gallery_path_valid(first_path):
+		fail_case("Initial gallery save must return a safe stable path")
+		return
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Initial work should add exactly one gallery entry")
+		return
+	for repeat in 4:
+		if Store.save_work(gallery_bricks,gallery_title) != first_path:
+			fail_case("Saving identical work without a source must reuse old file")
+			return
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Saving the same work made duplicate entries")
+		return
+	# Old installations may already have duplicate physical files. Keep these
+	# files intact, but show only one entry for identical bricks and title.
+	var old_duplicate := Store.ROOT+"work_legacy_duplicate_%d.json" % randi_range(1000000,9999999)
+	if not Store.write_safe(old_duplicate,{"version":2,"title":gallery_title,"pieces":gallery_bricks,"guide_id":-1,"step":0}):
+		fail_case("Cannot prepare simulated old duplicate file")
+		return
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Historical identical work copies should be hidden, not shown")
+		return
+	var gallery_game := Game.new()
+	gallery_game.size = Vector2(1280,720)
+	var target_index := -1
+	var gallery_list := Store.list_gallery()
+	for i in gallery_list.size():
+		if str(gallery_list[i].get("title","")) == gallery_title:
+			target_index = i
+			break
+	if target_index < 0:
+		fail_case("Saved gallery item not found")
+		return
+	for visit in 4:
+		gallery_game._perform("gallery")
+		gallery_game._perform("gallery:%d" % target_index)
+		if gallery_game.gallery_file != first_path or gallery_game.pieces.size() != gallery_bricks.size():
+			fail_case("Gallery open must keep original file identity and pieces")
+			return
+		gallery_game._perform("home")
+		if Store.list_gallery().size() != initial_count+1:
+			fail_case("Viewing an old work created another gallery entry")
+			return
+	# Tapping Collect again must update the same entry, not Save As.
+	gallery_game._save_gallery()
+	if gallery_game.gallery_file != first_path or Store.list_gallery().size() != initial_count+1:
+		fail_case("Re-collecting old work created a second entry")
+		return
+	gallery_game.pieces[0]["color"] = 12
+	gallery_game._save_gallery()
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Saving edits to an old work created a separate entry")
+		return
+	var updated: Dictionary = Store.read_document(first_path)
+	if updated.is_empty() or int(updated["pieces"][0]["color"]) != 12:
+		fail_case("Editing an old work must update its original file")
+		return
+	var reopened := Game.new()
+	reopened.size = Vector2(1280,720)
+	reopened._restore(Store.load_autosave())
+	if reopened.gallery_file != first_path:
+		fail_case("Autosave lost gallery identity after app restart")
+		return
+	reopened._archive_existing()
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Reopening after app restart archived an unwanted duplicate")
+		return
+	gallery_game.free()
+	reopened.free()
+	print("PASS: gallery repeated view, re-collect and edit reuse one file; legacy duplicates hidden")
 	print("PASS: hint moved into toolbar without overlap, 2-finger pinch, touch cancellation, pan, expanding map, rotation, guides, legacy saves")
 	quit(0)
