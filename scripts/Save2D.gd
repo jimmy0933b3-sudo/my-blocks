@@ -76,9 +76,24 @@ static func save_work(parts: Array, title: String, existing_file: String = "") -
 	if gallery_path_valid(existing_file):
 		var original := read_document(existing_file)
 		if not original.is_empty():
-			if work_signature(original["pieces"],str(original.get("title",""))) == work_signature(parts,title):
+			var previous_signature := work_signature(original["pieces"],str(original.get("title","")))
+			if previous_signature == work_signature(parts,title):
 				return existing_file
-			return existing_file if write_safe(existing_file,document) else ""
+			# Preserve historical duplicate files, but link them to the
+			# canonical work before its content diverges. Otherwise each old
+			# duplicate resurfaces as a separate item after every edit.
+			var identical_copies: Array = []
+			for other in _all_gallery_files():
+				if str(other["file"]) != existing_file and work_signature(other["pieces"],str(other.get("title",""))) == previous_signature:
+					identical_copies.append(other)
+			if not write_safe(existing_file,document):
+				return ""
+			for duplicate in identical_copies:
+				var alias: Dictionary = duplicate.duplicate(true)
+				alias.erase("file")
+				alias["alias_of"] = existing_file
+				write_safe(str(duplicate["file"]),alias)
+			return existing_file
 	var signature := work_signature(parts,title)
 	for saved in list_gallery():
 		if signature == work_signature(saved["pieces"],str(saved.get("title",""))):
@@ -93,7 +108,7 @@ static func save_work(parts: Array, title: String, existing_file: String = "") -
 static func save_to_gallery(parts: Array, title: String) -> bool:
 	return not save_work(parts,title).is_empty()
 
-static func list_gallery() -> Array:
+static func _all_gallery_files() -> Array:
 	ensure_directory()
 	var files := DirAccess.open(ROOT)
 	if files == null:
@@ -107,10 +122,18 @@ static func list_gallery() -> Array:
 				data["file"] = path
 				result.append(data)
 	result.sort_custom(func(a: Dictionary,b: Dictionary): return str(a["file"]) > str(b["file"]))
-	# Hide identical historical copies without deleting any user data.
+	return result
+
+static func list_gallery() -> Array:
+	# Never delete a user's old work. Suppress identical versions and linked
+	# historical duplicates; allow an orphaned alias back if its original file
+	# is missing so the old artwork can still be recovered.
 	var unique: Array = []
 	var seen: Dictionary = {}
-	for data in result:
+	for data in _all_gallery_files():
+		var origin := str(data.get("alias_of",""))
+		if gallery_path_valid(origin) and FileAccess.file_exists(origin):
+			continue
 		var signature := work_signature(data["pieces"],str(data.get("title","")))
 		if seen.has(signature):
 			continue
