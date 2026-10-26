@@ -73,7 +73,8 @@ func _initialize() -> void:
 	if header_space.size.x < 100.0 or header_space.position.y < 0.0 or header_space.end.y > Game.TOP_HEIGHT:
 		fail_case("Instruction area should be inside the top toolbar")
 		return
-	if header_space.end.x > 765.0 or header_space.position.x < 200.0:
+	var heading_end := 22.0+header_game._font().get_string_size("積木小宇宙",HORIZONTAL_ALIGNMENT_LEFT,-1,29).x
+	if header_space.end.x > 765.0-10.0 or header_space.position.x < heading_end+10.0:
 		fail_case("Instruction text overlaps the title or Home button")
 		return
 	var long_tip := "積木小宇宙的說明文字不能超出回首頁按鈕左邊或遮蓋底下畫布"
