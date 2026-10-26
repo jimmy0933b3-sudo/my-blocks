@@ -237,7 +237,9 @@ func _draw_game() -> void:
 		var shown := _fit_toolbar_hint(message,hint_area.size.x,18)
 		if not shown.is_empty():
 			_text(shown,Vector2(hint_area.position.x,36),18,Color("#FFFFFF"))
-		_text("雙指縮放 %d%%" % roundi(zoom_factor*100.0),Vector2(hint_area.position.x,59),16,Color("#E5F7FF"))
+		var zoom_text := _fit_toolbar_hint("雙指縮放 %d%%" % roundi(zoom_factor*100.0),hint_area.size.x,16)
+		if not zoom_text.is_empty():
+			_text(zoom_text,Vector2(hint_area.position.x,59),16,Color("#E5F7FF"))
 	_card(board_area,Color("#FFFFFF"),22)
 	var map_start := grid_origin+Vector2(canvas_bounds.position)*grid_cell
 	var map_end := map_start+Vector2(canvas_bounds.size)*grid_cell
