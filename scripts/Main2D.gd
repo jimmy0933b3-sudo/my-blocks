@@ -190,6 +190,27 @@ func _draw_menu() -> void:
 		_text("›",rect.position+Vector2(rect.size.x-43,button_height*0.5+11),35,Color("#4B83A0"))
 		menu_buttons.append({"rect":rect,"action":str(actions[i])})
 
+func _toolbar_hint_rect(home_left: float) -> Rect2:
+	# The instruction lives entirely inside the blue header, between the
+	# application title and the left edge of the Home button.
+	var title_width := _font().get_string_size("積木小宇宙",HORIZONTAL_ALIGNMENT_LEFT,-1,29).x
+	var left := 22.0+title_width+22.0
+	var right := home_left-12.0
+	return Rect2(Vector2(left,9),Vector2(maxf(0.0,right-left),58.0))
+
+func _fit_toolbar_hint(message: String, available: float, font_size: int = 18) -> String:
+	if available < 18.0:
+		return ""
+	if _font().get_string_size(message,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x <= available:
+		return message
+	var suffix := "…"
+	var shortened := message
+	while not shortened.is_empty():
+		shortened = shortened.substr(0,shortened.length()-1)
+		if _font().get_string_size(shortened+suffix,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x <= available:
+			return shortened+suffix
+	return ""
+
 func _draw_game() -> void:
 	menu_buttons.clear()
 	toolbar_buttons.clear()
@@ -205,6 +226,18 @@ func _draw_game() -> void:
 		_card(rect,Color("#FFF1CC"),15)
 		_text(actions[i],rect.position+Vector2(12,36),21)
 		toolbar_buttons.append({"rect":rect,"action":ids[i]})
+	# Keep the map completely unobstructed: move both the instruction and
+	# the pinch-zoom percentage into the area just left of "回首頁".
+	var message := notice
+	if page == "guide" and guide_step >= guide_parts.size():
+		message = "完成了！太棒了！記得按右上角的「收藏」"
+	var home_left := float(toolbar_buttons[toolbar_buttons.size()-1]["rect"].position.x)
+	var hint_area := _toolbar_hint_rect(home_left)
+	if hint_area.size.x >= 18.0:
+		var shown := _fit_toolbar_hint(message,hint_area.size.x,18)
+		if not shown.is_empty():
+			_text(shown,Vector2(hint_area.position.x,36),18,Color("#FFFFFF"))
+		_text("雙指縮放 %d%%" % roundi(zoom_factor*100.0),Vector2(hint_area.position.x,59),16,Color("#E5F7FF"))
 	_card(board_area,Color("#FFFFFF"),22)
 	var map_start := grid_origin+Vector2(canvas_bounds.position)*grid_cell
 	var map_end := map_start+Vector2(canvas_bounds.size)*grid_cell
@@ -221,12 +254,6 @@ func _draw_game() -> void:
 			var py := grid_origin.y+float(y)*grid_cell
 			if py >= visible_top and py <= visible_bottom:
 				draw_line(Vector2(visible_left,py),Vector2(visible_right,py),Color("#EFF3F4"),1.0)
-	var message := notice
-	if page == "guide" and guide_step >= guide_parts.size():
-		message = "完成了！太棒了！記得按右上角的「收藏」"
-	_card(Rect2(board_area.position+Vector2(10,9),Vector2(minf(board_area.size.x-20,680),38)),Color("#F0F8F4"),12)
-	_text(message,board_area.position+Vector2(23,36),20,Color("#54856A"))
-	_text("雙指縮放 %d%%" % roundi(zoom_factor*100.0),board_area.position+Vector2(board_area.size.x-184,35),17,Color("#4E87A9"))
 	if page == "guide" and guide_step < guide_parts.size():
 		var target: Dictionary = guide_parts[guide_step]
 		var target_box := _brick_rect(target)
