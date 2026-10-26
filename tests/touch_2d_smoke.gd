@@ -272,7 +272,7 @@ func _initialize() -> void:
 		return
 	# Old installations may already have duplicate physical files. Keep these
 	# files intact, but show only one entry for identical bricks and title.
-	var old_duplicate := Store.ROOT+"work_legacy_duplicate_%d.json" % randi_range(1000000,9999999)
+	var old_duplicate := Store.ROOT+"work_000000_duplicate_%d.json" % randi_range(1000000,9999999)
 	if not Store.write_safe(old_duplicate,{"version":2,"title":gallery_title,"pieces":gallery_bricks,"guide_id":-1,"step":0}):
 		fail_case("Cannot prepare simulated old duplicate file")
 		return
