@@ -104,10 +104,32 @@ jobs:
             exit 0
           fi
           tag="v0.1.${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt \
-            --target "$GITHUB_SHA" --latest \
-            --title "積木小宇宙 ${tag}｜最新版 APK" \
-            --notes "2D滑動積木、雙指捏合放大縮小、地圖自動延伸、雙點旋轉、8種積木形狀、32色、教學關卡及自動儲存。通過遊戲測試與固定簽章驗證。"
+          # Retry transient GitHub 500s. An earlier attempt might have already
+          # created the release, so recover by uploading assets to it.
+          published=false
+          for attempt in 1 2 3 4; do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              if gh release upload "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt --clobber; then
+                published=true
+                break
+              fi
+            elif gh release create "$tag" build/MyBlocks-signed.apk build/SIGNING-INFO.txt \
+              --target "$GITHUB_SHA" --latest \
+              --title "積木小宇宙 ${tag}｜最新版 APK" \
+              --notes "2D滑動積木、雙指捏合放大縮小、地圖自動延伸、雙點旋轉、8種積木形狀、32色、教學關卡及自動儲存。通過遊戲測試與固定簽章驗證。"; then
+              published=true
+              break
+            fi
+            echo "Release API unavailable: attempt $attempt of 4"
+            sleep "$((attempt * 5))"
+          done
+          if [[ "$published" != "true" ]]; then
+            echo "Could not publish signed APK. Preserving the previous release."
+            exit 1
+          fi
+          names="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          grep -Fxq "MyBlocks-signed.apk" <<< "$names"
+          grep -Fxq "SIGNING-INFO.txt" <<< "$names"
           # Delete only AFTER the replacement exists, even across multiple pages.
           gh api --paginate "repos/${GH_REPO}/releases?per_page=100" --jq '.[].tag_name' | while IFS= read -r old; do
             [[ -z "$old" || "$old" == "$tag" ]] && continue
