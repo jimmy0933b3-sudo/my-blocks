@@ -196,7 +196,12 @@ func _toolbar_hint_rect(home_left: float) -> Rect2:
 	var title_width := _font().get_string_size("積木小宇宙",HORIZONTAL_ALIGNMENT_LEFT,-1,29).x
 	var left := 22.0+title_width+22.0
 	var right := home_left-12.0
-	return Rect2(Vector2(left,9),Vector2(maxf(0.0,right-left),58.0))
+	# On compact screens a one-character hint is not useful. Hide it rather
+	# than risk crowding the title or the navigation button.
+	var usable_width := maxf(0.0,right-left)
+	if usable_width < 110.0:
+		usable_width = 0.0
+	return Rect2(Vector2(left,9),Vector2(usable_width,58.0))
 
 func _fit_toolbar_hint(message: String, available: float, font_size: int = 18) -> String:
 	if available < 18.0:
