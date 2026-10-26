@@ -314,6 +314,16 @@ func _initialize() -> void:
 	if updated.is_empty() or int(updated["pieces"][0]["color"]) != 12:
 		fail_case("Editing an old work must update its original file")
 		return
+	var preserved_duplicate: Dictionary = Store.read_document(old_duplicate)
+	if preserved_duplicate.is_empty() or str(preserved_duplicate.get("alias_of","")) != first_path:
+		fail_case("Original duplicate must stay on disk but point to the main work")
+		return
+	if int(preserved_duplicate["pieces"][0]["color"]) != 4:
+		fail_case("Legacy duplicate bricks must never be overwritten by edits")
+		return
+	if Store.list_gallery().size() != initial_count+1:
+		fail_case("Existing duplicates should stay hidden after editing the main work")
+		return
 	var reopened := Game.new()
 	reopened.size = Vector2(1280,720)
 	reopened._restore(Store.load_autosave())
