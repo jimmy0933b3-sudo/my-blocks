@@ -44,16 +44,54 @@ static func read_document(path: String) -> Dictionary:
 			return parser.data
 	return {}
 
-static func autosave(parts: Array, title: String, guide_id: int = -1, step: int = 0) -> bool:
-	return write_safe(AUTOSAVE,{"version":2,"title":title,"pieces":parts,"guide_id":guide_id,"step":step})
+static func autosave(parts: Array, title: String, guide_id: int = -1, step: int = 0, gallery_file: String = "") -> bool:
+	# Remember which collected work is currently open. Old autosave data without
+	# this field remains readable and is matched by content on its next save.
+	return write_safe(AUTOSAVE,{"version":2,"title":title,"pieces":parts,"guide_id":guide_id,"step":step,"gallery_file":gallery_file})
 
 static func load_autosave() -> Dictionary:
 	return read_document(AUTOSAVE)
 
-static func save_to_gallery(parts: Array, title: String) -> bool:
+static func gallery_path_valid(path: String) -> bool:
+	var name := path.get_file()
+	return path == ROOT+name and name.begins_with("work_") and name.ends_with(".json")
+
+static func work_signature(parts: Array, title: String) -> String:
+	# Compare appearance, not random file names or the IDs assigned while placing
+	# bricks. This also finds the duplicates created by previous app versions.
+	var features: Array[String] = []
+	for part in parts:
+		features.append("%d,%d,%d,%d,%d" % [
+			int(part.get("kind",0)),int(part.get("color",0)),
+			int(part.get("x",0)),int(part.get("y",0)),Core.rotation_of(part)])
+	features.sort()
+	return JSON.stringify([title,features])
+
+static func save_work(parts: Array, title: String, existing_file: String = "") -> String:
+	var document := {"version":2,"title":title,"pieces":parts,"guide_id":-1,"step":0}
+	if not Core.document_valid(document):
+		return ""
+	# A work opened from the gallery is edited in place. Merely opening an old
+	# work, or saving it again, must never create a second gallery entry.
+	if gallery_path_valid(existing_file):
+		var original := read_document(existing_file)
+		if not original.is_empty():
+			if work_signature(original["pieces"],str(original.get("title",""))) == work_signature(parts,title):
+				return existing_file
+			return existing_file if write_safe(existing_file,document) else ""
+	var signature := work_signature(parts,title)
+	for saved in list_gallery():
+		if signature == work_signature(saved["pieces"],str(saved.get("title",""))):
+			return str(saved["file"])
 	ensure_directory()
-	var target := ROOT + "work_%d_%d.json" % [int(Time.get_unix_time_from_system()),randi_range(1000,9999)]
-	return write_safe(target,{"version":2,"title":title,"pieces":parts,"guide_id":-1,"step":0})
+	for attempt in 32:
+		var target := ROOT+"work_%d_%d.json" % [int(Time.get_unix_time_from_system()),randi_range(1000,999999)]
+		if not FileAccess.file_exists(target) and write_safe(target,document):
+			return target
+	return ""
+
+static func save_to_gallery(parts: Array, title: String) -> bool:
+	return not save_work(parts,title).is_empty()
 
 static func list_gallery() -> Array:
 	ensure_directory()
@@ -69,4 +107,13 @@ static func list_gallery() -> Array:
 				data["file"] = path
 				result.append(data)
 	result.sort_custom(func(a: Dictionary,b: Dictionary): return str(a["file"]) > str(b["file"]))
-	return result
+	# Hide identical historical copies without deleting any user data.
+	var unique: Array = []
+	var seen: Dictionary = {}
+	for data in result:
+		var signature := work_signature(data["pieces"],str(data.get("title","")))
+		if seen.has(signature):
+			continue
+		seen[signature] = true
+		unique.append(data)
+	return unique
