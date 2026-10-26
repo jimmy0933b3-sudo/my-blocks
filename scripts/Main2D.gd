@@ -22,6 +22,8 @@ var guide_index := -1
 var guide_step := 0
 var guide_parts: Array = []
 var work_title := "我的積木作品"
+# Keeps the gallery file identity across viewing, editing, navigation and restarts.
+var gallery_file := ""
 var notice := "把下面的積木往上滑，就可以開始拼囉！"
 var history: Array = []
 var future: Array = []
@@ -377,11 +379,13 @@ func _schedule_save() -> void:
 func _save_now() -> void:
 	if autosave_timer != null:
 		autosave_timer.stop()
-	Store.autosave(pieces,work_title,guide_index,guide_step)
+	Store.autosave(pieces,work_title,guide_index,guide_step,gallery_file)
 
 func _restore(document: Dictionary) -> void:
 	pieces = document.get("pieces",[]).duplicate(true)
 	work_title = str(document.get("title","我的積木作品"))
+	var origin := str(document.get("file",document.get("gallery_file","")))
+	gallery_file = origin if Store.gallery_path_valid(origin) else ""
 	next_id = 1
 	for piece in pieces:
 		next_id = maxi(next_id,int(piece["id"])+1)
@@ -400,12 +404,18 @@ func _restore(document: Dictionary) -> void:
 	_refresh_canvas()
 
 func _archive_existing() -> void:
-	if not pieces.is_empty():
-		Store.save_to_gallery(pieces,work_title)
+	if pieces.is_empty():
+		return
+	# Gallery viewing is read-only. New works are archived once; opened works
+	# overwrite their original file only when their actual bricks changed.
+	var saved_path := Store.save_work(pieces,work_title,gallery_file)
+	if not saved_path.is_empty():
+		gallery_file = saved_path
 
 func _start_new() -> void:
 	_archive_existing()
 	pieces = []
+	gallery_file = ""
 	next_id = 1
 	selected_id = -1
 	work_title = "自由創作"
@@ -435,6 +445,7 @@ func _start_guide(index: int) -> void:
 		return
 	_archive_existing()
 	pieces = []
+	gallery_file = ""
 	next_id = 1
 	selected_id = -1
 	guide_index = index
@@ -472,6 +483,7 @@ func _perform(action: String) -> void:
 		"guides":
 			page = "guides"
 		"gallery":
+			# Listing a collection must never perform an implicit Save As.
 			page = "gallery"
 		"undo":
 			_undo()
@@ -526,8 +538,11 @@ func _save_gallery() -> void:
 	if pieces.is_empty():
 		notice = "先玩幾塊積木再收藏吧"
 		return
-	if Store.save_to_gallery(pieces,work_title):
-		notice = "已經放進作品館囉！ ★"
+	var saved_path := Store.save_work(pieces,work_title,gallery_file)
+	if not saved_path.is_empty():
+		gallery_file = saved_path
+		_save_now()
+		notice = "作品已收藏！再次收藏會更新同一份 ★"
 	else:
 		notice = "收藏失敗，請檢查儲存空間"
 
